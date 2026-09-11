@@ -304,6 +304,20 @@
     margin-top:var(--s-2); line-height:1.6;
   }
 
+  /* 好example / 壞example 對照 */
+  .ex-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--s-3);}
+  .ex-box{border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s-3) var(--s-4);}
+  .ex-box.bad{background:var(--warn-soft); border-color:#F0CFC6;}
+  .ex-box.good{background:var(--ok-soft); border-color:#C9E2D5;}
+  .ex-tag{font-size:11.5px; font-weight:700; margin-bottom:var(--s-2);}
+  .ex-box.bad .ex-tag{color:var(--warn);}
+  .ex-box.good .ex-tag{color:var(--ok);}
+  .ex-body{
+    font-size:13px; line-height:1.75; color:var(--ink);
+    background:rgba(255,255,255,.65); border-radius:6px; padding:8px 11px;
+  }
+  .ex-why{font-size:12px; color:var(--ink-soft); margin-top:var(--s-2); line-height:1.6;}
+
   /* 提示條 */
   .banner{
     background:var(--gold-soft); border:1px solid var(--gold-line); color:#7A5D14;
@@ -476,6 +490,13 @@
 
         <div class="form-section">
           <div class="sec-head">補課安排</div>
+
+          <div class="callout" style="margin-bottom:var(--s-4);">
+            <b>寫給助教看的，不是寫給自己看的</b>：助教沒上到那堂課，指派內容要寫到「照著做就能執行、做完知道算不算過」。
+            每一項對應一種助教職責型（書寫／朗誦／補考／觀念解答），並記得填課本和單元——助教是靠那兩欄去拿教材的。
+            <a data-goto="rules">看怎麼寫比較好</a>
+          </div>
+
           <div class="grid">
             <div class="field wide">
               <label>指派補課內容 <span class="hint">助教職責分四型：書寫、朗誦、補考、觀念解答</span></label>
@@ -656,6 +677,42 @@
         </ol>
       </div>
 
+    </div>
+
+    <!-- 補課安排的寫法建議 -->
+    <div class="rule-card" style="margin-top:var(--s-4);">
+      <h3>補課安排怎麼開，助教才好執行</h3>
+
+      <p style="font-size:13px; color:var(--ink-soft); margin:0 0 var(--s-4); line-height:1.7;">
+        助教沒上到那堂課，手上只有你填的這張單。判斷標準很簡單：<strong style="color:var(--ink);">一個沒進過你班級的人，照著這段文字能不能執行、做完知不知道算不算過。</strong>
+      </p>
+
+      <div class="ex-row">
+        <div class="ex-box bad">
+          <div class="ex-tag">這樣寫助教會卡住</div>
+          <div class="ex-body">複習 U3<br>補一下作業</div>
+          <div class="ex-why">沒說複習什麼、補到哪、怎樣算完成。助教只能自己猜，驗收成果也只填得出「已完成」。</div>
+        </div>
+        <div class="ex-box good">
+          <div class="ex-tag">這樣寫可以直接做</div>
+          <div class="ex-body">1. 補考 U3 單字 20 個（補考型），對 17 個以上算過<br>2. 帶讀課文 p.24-25 各兩遍（朗誦型），可播音檔跟讀<br>3. 補寫 Workbook p.18（書寫型）</div>
+          <div class="ex-why">每一項都有對應職責型、有範圍、有過關標準，助教做完能具體回填驗收結果。</div>
+        </div>
+      </div>
+
+      <ol class="rule-list" style="margin-top:var(--s-5);">
+        <li><strong>一項一型</strong>：每一條對照上面四型其中一種。混在一起寫，助教抓不到重點，時間也容易不夠。</li>
+        <li><strong>給過關標準</strong>：助教要在「驗收成果」回填結果，你查核時才看得出學生到底會了沒。沒有標準，這一欄就只會是「已完成」三個字。</li>
+        <li><strong>時長對得上份量</strong>：15–20 分鐘適合單一件事；排到兩、三項請給 30 分鐘以上。時間開太短，助教只能草草結束。</li>
+        <li><strong>先確認在職責範圍內</strong>：<span style="color:var(--warn);">平日小考補考不在助教範圍</span>；功課沒寫的補寫要在英語教室完成。超出範圍的請自己處理或另外安排。</li>
+        <li><strong>課本和單元一定要填</strong>：助教靠這兩欄去拿教材，這兩欄也會帶進「傳給教學部：申請時段」的訊息，教學部才知道要提醒學生帶哪一本。</li>
+        <li><strong>前一天就要開單</strong>：預留一天給助教預備、讓教學部通知學生。當天才開，助教等於沒時間準備。</li>
+        <li><strong>補課完記得回來簽名</strong>：助教填完成果後這筆會變成「待老師查核」，你確認內容無誤按「查核並簽名」才算結案。</li>
+      </ol>
+
+      <div class="rule-note" style="margin-top:var(--s-4);">
+        這一頁的建議是依現行制度整理的，實際過關標準、時長抓法請依部門共識調整。
+      </div>
     </div>
   </section>
 
