@@ -188,6 +188,7 @@
   }
   .tag.pending{background:var(--gold-soft); color:#7A5D14; border-color:var(--gold-line);}
   .tag.overdue{background:var(--warn-soft); color:var(--warn); border-color:#F0CFC6;}
+  .tag.toVerify{background:var(--primary-soft); color:var(--primary); border-color:#D6CCEE;}
   .tag.done{background:var(--ok-soft); color:var(--ok); border-color:#C9E2D5;}
 
   /* 紀錄卡 */
@@ -196,6 +197,7 @@
     border-radius:var(--r-md); padding:var(--s-4); margin-bottom:var(--s-3); background:#fff;
   }
   .record-card.overdue{border-left-color:var(--warn); background:#FFFCFB;}
+  .record-card.toVerify{border-left-color:var(--primary);}
   .record-card.done{border-left-color:var(--ok);}
   .rc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:var(--s-3);}
   .rc-title{font-weight:700; font-size:15px;}
@@ -216,7 +218,7 @@
   .ta-form{display:none; margin-top:var(--s-4); padding-top:var(--s-4); border-top:1px dashed var(--line);}
   .ta-form.open{display:block;}
 
-  /* 主任：統計 */
+  /* 管理職：統計 */
   .stat-row{
     display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
     gap:var(--s-3); margin-bottom:var(--s-4);
@@ -230,6 +232,7 @@
   .stat.overdue .num{color:var(--warn);}
   .stat.done .num{color:var(--ok);}
   .stat.pending .num{color:var(--gold);}
+  .stat.toVerify .num{color:var(--primary);}
 
   /* 篩選列 */
   .filter-bar{
@@ -265,6 +268,7 @@
   table.admin-table tbody tr:last-child td{border-bottom:none;}
   table.admin-table tbody tr:hover td{background:var(--paper);}
   table.admin-table tr.overdue td{background:var(--warn-soft);}
+  table.admin-table tr.toVerify td{background:#FAF8FE;}
   table.admin-table tr.done td{background:#FBFDFC;}
   .roster-table{min-width:0;}
 
@@ -364,6 +368,7 @@
       margin-bottom:var(--s-3); padding:var(--s-3); background:#fff;
     }
     table.admin-table tr.overdue{border-left:3px solid var(--warn);}
+    table.admin-table tr.toVerify{border-left:3px solid var(--primary);}
     table.admin-table tr.done{border-left:3px solid var(--ok);}
     table.admin-table td{
       border:none; padding:3px 0; display:flex; gap:var(--s-3);
@@ -374,7 +379,8 @@
       font-weight:500; flex-shrink:0;
     }
     table.admin-table td:empty{display:none;}
-    table.admin-table tr.overdue td, table.admin-table tr.done td{background:transparent;}
+    table.admin-table tr.overdue td, table.admin-table tr.toVerify td,
+    table.admin-table tr.done td{background:transparent;}
     table.admin-table tbody tr:hover td{background:transparent;}
 
     /* 五欄硬擠進手機寬度會讓助教姓名斷行，改成這一區自己左右捲動 */
@@ -413,7 +419,7 @@
     <div class="role-tabs" id="roleTabs">
       <button data-role="teacher" class="active">老師</button>
       <button data-role="ta">助教</button>
-      <button data-role="admin">主任</button>
+      <button data-role="admin">管理職</button>
       <button data-role="rules">規則說明</button>
     </div>
     <input id="myName" placeholder="你的姓名" />
@@ -507,6 +513,15 @@
 
     <div class="panel">
       <h2>我登記的補課紀錄 <span class="count" id="teacherCount"></span></h2>
+      <div class="filter-bar">
+        <div class="chip-row" id="teacherStatusFilter">
+          <button data-status="all" class="active">全部</button>
+          <button data-status="toVerify">待我查核</button>
+          <button data-status="pending">待補課</button>
+          <button data-status="overdue">逾期</button>
+          <button data-status="done">已完成</button>
+        </div>
+      </div>
       <div id="teacherRecordList"></div>
     </div>
   </section>
@@ -529,7 +544,7 @@
     </div>
   </section>
 
-  <!-- ================= 主任 ================= -->
+  <!-- ================= 管理職 ================= -->
   <section class="view" id="view-admin">
     <div class="stat-row" id="adminStats"></div>
 
@@ -542,6 +557,7 @@
           <button data-status="all" class="active">全部</button>
           <button data-status="pending">待補課</button>
           <button data-status="overdue">逾期</button>
+          <button data-status="toVerify">待查核</button>
           <button data-status="done">已完成</button>
         </div>
         <select id="adminTaFilter"><option value="">所有助教</option></select>
@@ -552,7 +568,8 @@
           <thead>
             <tr>
               <th>狀態</th><th>缺課日期</th><th>學生</th><th>班級/導師</th><th>原因</th>
-              <th>指派內容</th><th>時段</th><th>助教</th><th>實際補課</th><th>驗收</th><th>家長已通知</th>
+              <th>指派內容</th><th>時段</th><th>助教</th><th>實際補課</th><th>驗收</th>
+              <th>家長已通知</th><th>老師查核</th>
             </tr>
           </thead>
           <tbody id="adminTableBody"></tbody>

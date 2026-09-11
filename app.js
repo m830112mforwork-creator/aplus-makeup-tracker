@@ -41,7 +41,7 @@ const REQUIRE_PASSWORD = false;
 const SHARED_ACCOUNT_EMAIL = "staff@aplus-makeup.local";
 
 const WEEKDAY_LABEL = { Mon:"週一", Tue:"週二", Wed:"週三", Thu:"週四", Fri:"週五" };
-const OVERDUE_DAYS = 3; // 缺課日期超過幾天沒補課 = 逾期，主任儀表板會標紅
+const OVERDUE_DAYS = 3; // 缺課日期超過幾天沒補課 = 逾期，管理職儀表板會標紅
 
 let db = null;
 let auth = null;
@@ -51,6 +51,7 @@ let roster = [];
 let state = { role: "teacher", name: "" };
 let selectedSlot = null; // {weekday, time, ta}
 let adminFilter = { search: "", status: "all", ta: "" };
+let teacherFilter = { status: "all" };
 
 // ---------------- Firebase 初始化 ----------------
 function isConfigured(){
@@ -213,13 +214,22 @@ function daysSince(dateStr){
   const d1 = new Date(dateStr), d2 = new Date(todayStr());
   return Math.floor((d2-d1)/86400000);
 }
+// 一筆紀錄的生命週期：
+//   待補課 →（助教填完成果）→ 待老師查核 →（老師簽名）→ 已完成
+// 老師簽名這一步對應規則說明裡教師須預備的第 4 項「補課追蹤：查看助教
+// 填寫的補課紀錄並簽名」。沒簽名就不算結案。
 function computeStatus(r){
-  if(r.actualDate) return "done";
+  if(r.actualDate) return r.teacherVerified ? "done" : "toVerify";
   if(daysSince(r.absenceDate) > OVERDUE_DAYS) return "overdue";
   return "pending";
 }
 function statusLabel(s){
-  return { pending:"待補課", overdue:"逾期未補", done:"已完成" }[s];
+  return { pending:"待補課", overdue:"逾期未補", toVerify:"待老師查核", done:"已完成" }[s];
+}
+function formatStamp(ms){
+  if(!ms) return "";
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 function showToast(msg){
   const t = document.getElementById("toast");
@@ -292,7 +302,7 @@ function renderSlotPicker(){
   const times = [...new Set(roster.map(s=>s.time))].sort();
 
   if(times.length === 0){
-    wrap.innerHTML = '<div class="empty">主任還沒設定任何補課時段</div>';
+    wrap.innerHTML = '<div class="empty">管理職還沒設定任何補課時段</div>';
     return;
   }
 
@@ -364,7 +374,7 @@ document.getElementById("teacherForm").addEventListener("submit", async e=>{
   showToast("已送出補課紀錄");
 });
 
-// ---------------- 主任：時段設定 ----------------
+// ---------------- 管理職：時段設定 ----------------
 document.getElementById("rosterAddForm").addEventListener("submit", async e=>{
   e.preventDefault();
   const fd = new FormData(e.target);
@@ -383,7 +393,7 @@ document.getElementById("rosterAddForm").addEventListener("submit", async e=>{
   showToast("已更新時段設定");
 });
 
-// ---------------- 更新紀錄（助教填寫 / 主任編輯共用）----------------
+// ---------------- 更新紀錄（助教填寫 / 管理職編輯共用）----------------
 async function saveRecordFields(id, fields){
   if(db){ await updateDoc(doc(db,"records",id), fields); }
   else {
@@ -475,12 +485,39 @@ function renderTeacherRecords(){
   const wrap = document.getElementById("teacherRecordList");
   const badge = document.getElementById("teacherCount");
   const mine = records.filter(r=>r.teacherName===state.name);
-  badge.textContent = state.name ? `${mine.length} 筆` : "";
-  if(!state.name){ wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到你登記的紀錄</div>'; return; }
+
+  if(!state.name){
+    badge.textContent = "";
+    wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到你登記的紀錄</div>';
+    return;
+  }
+
+  // 待查核的筆數要一眼看到，這是老師該處理的事
+  const toVerify = mine.filter(r=>computeStatus(r)==="toVerify").length;
+  badge.textContent = toVerify > 0 ? `${mine.length} 筆・${toVerify} 筆待查核` : `${mine.length} 筆`;
+
   if(mine.length===0){ wrap.innerHTML = '<div class="empty">還沒有登記任何紀錄</div>'; return; }
-  wrap.innerHTML = mine.map(r=>recordCardHtml(r, "teacher")).join("");
-  bindRecordActions(wrap, mine);
+
+  const shown = teacherFilter.status === "all"
+    ? mine
+    : mine.filter(r=>computeStatus(r)===teacherFilter.status);
+
+  if(shown.length===0){
+    wrap.innerHTML = '<div class="empty">沒有符合這個狀態的紀錄</div>';
+    return;
+  }
+  wrap.innerHTML = shown.map(r=>recordCardHtml(r, "teacher")).join("");
+  bindRecordActions(wrap, shown);
 }
+
+document.getElementById("teacherStatusFilter").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-status]");
+  if(!btn) return;
+  teacherFilter.status = btn.dataset.status;
+  document.querySelectorAll("#teacherStatusFilter button")
+    .forEach(b=>b.classList.toggle("active", b===btn));
+  renderTeacherRecords();
+});
 
 // ---------------- 渲染：助教的待辦 / 已完成 ----------------
 // 重畫會把 DOM 整個換掉，助教打到一半的字會消失。
@@ -525,7 +562,7 @@ function renderTaLists(){
   const doneBadge = document.getElementById("taDoneCount");
 
   if(!state.name){
-    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與主任在「時段設定」填的助教姓名完全一致）</div>';
+    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與管理職在「時段設定」填的助教姓名完全一致）</div>';
     doneWrap.innerHTML = "";
     pendingBadge.textContent = "";
     doneBadge.textContent = "";
@@ -579,7 +616,10 @@ function recordCardHtml(r, mode){
       ${kv("驗收成果", r.result)}
       ${kv("作業狀況", r.homeworkStatus)}
       ${kv("助教備註", r.taNote)}
-      ${kv("家長已通知", r.parentNotified ? "是" : "否")}` : ``}
+      ${kv("家長已通知", r.parentNotified ? "是" : "否")}
+      ${kv("老師查核", r.teacherVerified
+            ? `${r.verifiedBy || ""} 已簽名${r.verifiedAt ? `（${formatStamp(r.verifiedAt)}）` : ""}`
+            : "尚未查核")}` : ``}
     </div>
 
     <div class="rc-actions">
@@ -587,6 +627,8 @@ function recordCardHtml(r, mode){
         <button class="btn secondary small act-dept-request">傳給教學部：申請時段</button>
         <button class="btn secondary small act-dept-update">傳給教學部：異動通知</button>
       ` : ``}
+      ${mode==="teacher" && r.actualDate && !r.teacherVerified
+        ? `<button class="btn small act-verify">查核並簽名</button>` : ``}
       ${mode==="ta" && !r.actualDate ? `<button class="btn small act-fill">填寫補課成果</button>` : ``}
       ${mode==="ta" && r.actualDate ? `<button class="btn secondary small act-parent-msg">產生家長通知訊息</button>` : ``}
     </div>
@@ -623,6 +665,21 @@ function bindRecordActions(container, list){
     card.querySelector(".act-dept-request")?.addEventListener("click", ()=>openDeptRequestModal(r));
     card.querySelector(".act-dept-update")?.addEventListener("click", ()=>openDeptUpdateModal(r));
     card.querySelector(".act-parent-msg")?.addEventListener("click", ()=>openParentMessageModal(r));
+    card.querySelector(".act-verify")?.addEventListener("click", async ()=>{
+      if(!state.name){ showToast("請先在右上角輸入你的姓名才能簽名"); return; }
+      const ok = confirm(
+        `確認 ${r.studentNameCh} 的補課紀錄已查核無誤？\n\n` +
+        `實際補課：${r.actualDate}\n驗收成果：${r.result || "（未填）"}\n作業狀況：${r.homeworkStatus || "（未填）"}\n\n` +
+        `簽名後會記錄為「${state.name}」查核，並把這筆結案。`
+      );
+      if(!ok) return;
+      await saveRecordFields(r.id, {
+        teacherVerified: true,
+        verifiedBy: state.name,
+        verifiedAt: Date.now(),
+      });
+      showToast("已查核並簽名");
+    });
     card.querySelector(".act-fill")?.addEventListener("click", ()=>{
       document.getElementById("taform-"+r.id).classList.toggle("open");
     });
@@ -642,7 +699,7 @@ function bindRecordActions(container, list){
   });
 }
 
-// ---------------- 渲染：主任儀表板 ----------------
+// ---------------- 渲染：管理職儀表板 ----------------
 function matchesAdminFilter(r){
   if(adminFilter.status !== "all" && computeStatus(r) !== adminFilter.status) return false;
   if(adminFilter.ta && r.slotTA !== adminFilter.ta) return false;
@@ -656,14 +713,13 @@ function matchesAdminFilter(r){
 
 function renderAdmin(){
   const e = escapeHtml;
-  const pending = records.filter(r=>computeStatus(r)==="pending").length;
-  const overdue = records.filter(r=>computeStatus(r)==="overdue").length;
-  const done = records.filter(r=>computeStatus(r)==="done").length;
+  const count = s => records.filter(r=>computeStatus(r)===s).length;
   document.getElementById("adminStats").innerHTML = `
     <div class="stat"><div class="num">${records.length}</div><div class="label">總紀錄數</div></div>
-    <div class="stat pending"><div class="num">${pending}</div><div class="label">待補課</div></div>
-    <div class="stat overdue"><div class="num">${overdue}</div><div class="label">逾期未補</div></div>
-    <div class="stat done"><div class="num">${done}</div><div class="label">已完成</div></div>
+    <div class="stat pending"><div class="num">${count("pending")}</div><div class="label">待補課</div></div>
+    <div class="stat overdue"><div class="num">${count("overdue")}</div><div class="label">逾期未補</div></div>
+    <div class="stat toVerify"><div class="num">${count("toVerify")}</div><div class="label">待老師查核</div></div>
+    <div class="stat done"><div class="num">${count("done")}</div><div class="label">已完成</div></div>
   `;
 
   // 助教篩選下拉：從時段設定和既有紀錄收集所有助教姓名
@@ -686,9 +742,9 @@ function renderAdmin(){
 
   const tbody = document.getElementById("adminTableBody");
   if(records.length === 0){
-    tbody.innerHTML = `<tr><td colspan="11" class="empty">目前沒有紀錄</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty">目前沒有紀錄</td></tr>`;
   } else if(shown.length === 0){
-    tbody.innerHTML = `<tr><td colspan="11" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
   } else {
     // data-label 是給手機用的：窄螢幕時表格會變成一筆一張卡，欄位名靠它顯示
     tbody.innerHTML = shown.map(r=>{
@@ -706,6 +762,9 @@ function renderAdmin(){
         ${td("實際補課", e(r.actualDate || "-"))}
         ${td("驗收", e(r.result || "-"))}
         ${td("家長已通知", r.parentNotified ? "是" : "否")}
+        ${td("老師查核", r.teacherVerified
+              ? e(`${r.verifiedBy || "已簽名"}${r.verifiedAt ? ` ${formatStamp(r.verifiedAt)}` : ""}`)
+              : "-")}
       </tr>`;
     }).join("");
   }
@@ -735,7 +794,7 @@ function renderAdmin(){
   }
 }
 
-// ---------------- 主任：篩選列 ----------------
+// ---------------- 管理職：篩選列 ----------------
 let searchTimer = null;
 document.getElementById("adminSearch").addEventListener("input", e=>{
   clearTimeout(searchTimer);
