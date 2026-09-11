@@ -53,6 +53,32 @@ let selectedSlot = null; // {weekday, time, ta}
 let adminFilter = { search: "", status: "all", ta: "" };
 let teacherFilter = { status: "all" };
 
+// 總表一次最多畫幾列。紀錄累積到上千筆時，全部塞進 DOM 會讓頁面長到幾十萬
+// 像素、節點數破六萬，捲動開始頓。超過的部分按「顯示更多」再追加。
+const ADMIN_PAGE_SIZE = 100;   // 總表一次 100 列
+const CARD_PAGE_SIZE = 50;     // 卡片列表一次 50 張（卡片比表格列重）
+let adminShown = ADMIN_PAGE_SIZE;
+let teacherShown = CARD_PAGE_SIZE;
+let taPendingShown = CARD_PAGE_SIZE;
+let taDoneShown = CARD_PAGE_SIZE;
+
+// 「顯示 N / M 筆」＋兩顆按鈕。四個列表共用。
+function renderMoreBar(el, shownCount, totalCount, step, onMore, onAll){
+  if(!el) return;
+  if(totalCount <= shownCount){ el.innerHTML = ""; return; }
+  el.innerHTML = `<div class="more-bar">
+    <span>顯示 ${shownCount} / ${totalCount} 筆</span>
+    <button type="button" class="btn secondary small" data-act="more">再顯示 ${Math.min(step, totalCount - shownCount)} 筆</button>
+    <button type="button" class="btn ghost small" data-act="all">全部顯示</button>
+  </div>`;
+  el.querySelector('[data-act="more"]').addEventListener("click", onMore);
+  el.querySelector('[data-act="all"]').addEventListener("click", onAll);
+}
+
+// 哪些分頁的內容已經過期需要重畫。資料一有更新就把三頁都標記為過期，
+// 但只重畫使用者正在看的那一頁，其餘等切過去再畫。
+let dirty = { teacher: true, ta: true, admin: true };
+
 // ---------------- Firebase 初始化 ----------------
 function isConfigured(){
   return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
@@ -261,7 +287,7 @@ function switchRole(role){
   document.getElementById("view-"+role).classList.add("active");
   localStorage.setItem("makeup_role", role);
   window.scrollTo({ top:0, behavior:"smooth" });
-  renderAll();
+  renderActiveView();   // 只畫剛切過去的那一頁
 }
 
 document.getElementById("roleTabs").addEventListener("click", e=>{
@@ -523,16 +549,22 @@ function renderTeacherRecords(){
 
   if(shown.length===0){
     wrap.innerHTML = '<div class="empty">沒有符合這個狀態的紀錄</div>';
+    document.getElementById("teacherMore").innerHTML = "";
     return;
   }
-  wrap.innerHTML = shown.map(r=>recordCardHtml(r, "teacher")).join("");
-  bindRecordActions(wrap, shown);
+  const page = shown.slice(0, teacherShown);
+  wrap.innerHTML = page.map(r=>recordCardHtml(r, "teacher")).join("");
+  bindRecordActions(wrap, page);
+  renderMoreBar(document.getElementById("teacherMore"), page.length, shown.length, CARD_PAGE_SIZE,
+    ()=>{ teacherShown += CARD_PAGE_SIZE; renderTeacherRecords(); },
+    ()=>{ teacherShown = Infinity; renderTeacherRecords(); });
 }
 
 document.getElementById("teacherStatusFilter").addEventListener("click", e=>{
   const btn = e.target.closest("button[data-status]");
   if(!btn) return;
   teacherFilter.status = btn.dataset.status;
+  teacherShown = CARD_PAGE_SIZE;
   document.querySelectorAll("#teacherStatusFilter button")
     .forEach(b=>b.classList.toggle("active", b===btn));
   renderTeacherRecords();
@@ -597,15 +629,26 @@ function renderTaLists(){
   pendingBadge.textContent = `${pending.length} 筆`;
   doneBadge.textContent = `${done.length} 筆`;
 
-  pendingWrap.innerHTML = pending.length
-    ? pending.map(r=>recordCardHtml(r,"ta")).join("")
+  const pendingPage = pending.slice(0, taPendingShown);
+  const donePage = done.slice(0, taDoneShown);
+
+  pendingWrap.innerHTML = pendingPage.length
+    ? pendingPage.map(r=>recordCardHtml(r,"ta")).join("")
     : '<div class="empty">目前沒有待處理的補課</div>';
-  doneWrap.innerHTML = done.length
-    ? done.map(r=>recordCardHtml(r,"ta")).join("")
+  doneWrap.innerHTML = donePage.length
+    ? donePage.map(r=>recordCardHtml(r,"ta")).join("")
     : '<div class="empty">還沒有已完成的紀錄</div>';
 
-  bindRecordActions(pendingWrap, pending);
-  bindRecordActions(doneWrap, done);
+  bindRecordActions(pendingWrap, pendingPage);
+  bindRecordActions(doneWrap, donePage);
+
+  renderMoreBar(document.getElementById("taPendingMore"), pendingPage.length, pending.length, CARD_PAGE_SIZE,
+    ()=>{ taPendingShown += CARD_PAGE_SIZE; renderTaLists(); },
+    ()=>{ taPendingShown = Infinity; renderTaLists(); });
+  renderMoreBar(document.getElementById("taDoneMore"), donePage.length, done.length, CARD_PAGE_SIZE,
+    ()=>{ taDoneShown += CARD_PAGE_SIZE; renderTaLists(); },
+    ()=>{ taDoneShown = Infinity; renderTaLists(); });
+
   restoreTaFormState(formState);
 }
 
@@ -762,13 +805,21 @@ function renderAdmin(){
     isFiltered ? `${shown.length} / ${records.length} 筆` : `${records.length} 筆`;
 
   const tbody = document.getElementById("adminTableBody");
+  const moreBar = document.getElementById("adminMore");
+  const page = shown.slice(0, adminShown);   // 只畫前 adminShown 筆
+
+  // 還有沒畫出來的就給一顆「顯示更多」，不要一次把上千列塞進 DOM
+  renderMoreBar(moreBar, page.length, shown.length, ADMIN_PAGE_SIZE,
+    ()=>{ adminShown += ADMIN_PAGE_SIZE; renderAdmin(); },
+    ()=>{ adminShown = Infinity; renderAdmin(); });
+
   if(records.length === 0){
     tbody.innerHTML = `<tr><td colspan="12" class="empty">目前沒有紀錄</td></tr>`;
   } else if(shown.length === 0){
     tbody.innerHTML = `<tr><td colspan="12" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
   } else {
     // data-label 是給手機用的：窄螢幕時表格會變成一筆一張卡，欄位名靠它顯示
-    tbody.innerHTML = shown.map(r=>{
+    tbody.innerHTML = page.map(r=>{
       const status = computeStatus(r);
       const td = (label, html) => `<td data-label="${label}">${html}</td>`;
       return `<tr class="${status}">
@@ -820,28 +871,44 @@ let searchTimer = null;
 document.getElementById("adminSearch").addEventListener("input", e=>{
   clearTimeout(searchTimer);
   const v = e.target.value;
-  searchTimer = setTimeout(()=>{ adminFilter.search = v; renderAdmin(); }, 200);
+  searchTimer = setTimeout(()=>{ adminFilter.search = v; adminShown = ADMIN_PAGE_SIZE; renderAdmin(); }, 200);
 });
 document.getElementById("adminStatusFilter").addEventListener("click", e=>{
   const btn = e.target.closest("button[data-status]");
   if(!btn) return;
   adminFilter.status = btn.dataset.status;
+  adminShown = ADMIN_PAGE_SIZE;
   document.querySelectorAll("#adminStatusFilter button")
     .forEach(b=>b.classList.toggle("active", b===btn));
   renderAdmin();
 });
 document.getElementById("adminTaFilter").addEventListener("change", e=>{
   adminFilter.ta = e.target.value;
+  adminShown = ADMIN_PAGE_SIZE;
   renderAdmin();
 });
 
 // ---------------- 統一渲染入口 ----------------
+// 資料變了：三頁都標記為過期，但只重畫當下看得到的那一頁。
+// Firestore 每一次推播都會走到這裡，全部重畫等於白花三倍的時間在沒人看的畫面上。
 function renderAll(){
+  dirty.teacher = dirty.ta = dirty.admin = true;
+  renderActiveView();
+}
+
+function renderActiveView(){
   refreshNameField();
-  renderSlotPicker();
-  renderTeacherRecords();
-  renderTaLists();
-  renderAdmin();
+  if(state.role === "teacher" && dirty.teacher){
+    renderSlotPicker();
+    renderTeacherRecords();
+    dirty.teacher = false;
+  } else if(state.role === "ta" && dirty.ta){
+    renderTaLists();
+    dirty.ta = false;
+  } else if(state.role === "admin" && dirty.admin){
+    renderAdmin();
+    dirty.admin = false;
+  }
 }
 
 initFirebase();

@@ -293,6 +293,11 @@
 
   .empty{color:var(--ink-faint); font-size:13.5px; padding:26px 18px; text-align:center;}
 
+  .more-bar{
+    display:flex; align-items:center; justify-content:center; gap:var(--s-3);
+    padding:var(--s-3) 0 0; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;
+  }
+
   /* 規則說明 */
   .rules-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:var(--s-4);}
   .rule-card{
@@ -622,6 +627,7 @@
         </div>
       </div>
       <div id="teacherRecordList"></div>
+      <div id="teacherMore"></div>
     </div>
   </section>
 
@@ -636,10 +642,12 @@
     <div class="panel">
       <h2>待處理的補課（指派給我） <span class="count" id="taPendingCount"></span></h2>
       <div id="taPendingList"></div>
+      <div id="taPendingMore"></div>
     </div>
     <div class="panel">
       <h2>已完成紀錄 <span class="count" id="taDoneCount"></span></h2>
       <div id="taDoneList"></div>
+      <div id="taDoneMore"></div>
     </div>
   </section>
 
@@ -674,6 +682,7 @@
           <tbody id="adminTableBody"></tbody>
         </table>
       </div>
+      <div id="adminMore"></div>
     </div>
 
     <div class="panel">
