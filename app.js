@@ -605,6 +605,7 @@ function recordCardHtml(r, mode){
       <span class="tag ${status}">${statusLabel(status)}</span>
     </div>
     <div class="rc-body">
+      ${kv("教學老師", r.teachingTeacher)}
       ${kv("缺課核心課程", r.coreCourse)}
       ${kv("課本單元", r.bookUnit)}
       ${kv("指派補課內容", r.assignedContent)}
@@ -706,8 +707,8 @@ function matchesAdminFilter(r){
   const q = adminFilter.search.trim().toLowerCase();
   if(!q) return true;
   return [r.studentNameCh, r.studentNameEn, r.className, r.grade,
-          r.homeroomTeacher, r.teacherName, r.slotTA, r.leaveReason,
-          r.bookUnit, r.assignedContent]
+          r.homeroomTeacher, r.teachingTeacher, r.teacherName, r.slotTA,
+          r.leaveReason, r.bookUnit, r.assignedContent]
     .some(v => String(v||"").toLowerCase().includes(q));
 }
 
