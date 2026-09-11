@@ -304,6 +304,39 @@
     margin-top:var(--s-2); line-height:1.6;
   }
 
+  /* 老師表單裡的助教職責提醒（內容同規則說明第一張卡） */
+  .duty-reminder{
+    background:var(--primary-soft); border:1px solid #DCD4EE;
+    border-radius:var(--r-sm); padding:var(--s-3) var(--s-4); margin-bottom:var(--s-4);
+  }
+  .dr-head{
+    font-size:12.5px; font-weight:700; color:var(--primary); margin-bottom:var(--s-3);
+  }
+  .dr-head span{font-weight:400; color:var(--ink-soft); font-size:12px;}
+  .dr-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:var(--s-2) var(--s-4);}
+  .dr-item{
+    background:rgba(255,255,255,.7); border-radius:6px; padding:8px 11px;
+  }
+  .dr-name{
+    font-size:12.5px; font-weight:700; color:var(--ink); margin-bottom:2px;
+    display:flex; align-items:center; gap:6px;
+  }
+  .dr-name::before{
+    content:""; width:6px; height:6px; border-radius:50%;
+    background:var(--gold); flex-shrink:0;
+  }
+  .dr-desc{font-size:12px; color:var(--ink-soft); line-height:1.55;}
+  .dr-limit{
+    font-size:11.5px; color:var(--warn); margin-top:4px; line-height:1.5;
+    display:flex; gap:4px;
+  }
+  .dr-limit::before{content:"⚠"; flex-shrink:0;}
+  .dr-foot{
+    font-size:12px; color:var(--ink-soft); margin-top:var(--s-3);
+    padding-top:var(--s-2); border-top:1px solid #DCD4EE; line-height:1.6;
+  }
+  .dr-foot a{color:var(--primary); font-weight:700; cursor:pointer; text-decoration:underline;}
+
   /* 好example / 壞example 對照 */
   .ex-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:var(--s-3);}
   .ex-box{border:1px solid var(--line); border-radius:var(--r-sm); padding:var(--s-3) var(--s-4);}
@@ -491,15 +524,38 @@
         <div class="form-section">
           <div class="sec-head">補課安排</div>
 
-          <div class="callout" style="margin-bottom:var(--s-4);">
-            <b>寫給助教看的，不是寫給自己看的</b>：助教沒上到那堂課，指派內容要寫到「照著做就能執行、做完知道算不算過」。
-            每一項對應一種助教職責型（書寫／朗誦／補考／觀念解答），並記得填課本和單元——助教是靠那兩欄去拿教材的。
-            <a data-goto="rules">看怎麼寫比較好</a>
+          <!-- 指派前先看一眼助教能做什麼，內容同「規則說明」的第一張卡 -->
+          <div class="duty-reminder">
+            <div class="dr-head">助教可以做的職責 <span>指派內容請落在這四型裡</span></div>
+            <div class="dr-grid">
+              <div class="dr-item">
+                <div class="dr-name">書寫型</div>
+                <div class="dr-desc">Writing Book 練習書寫、課本的內容書寫、Quiz 罰寫訂正</div>
+                <div class="dr-limit">功課沒寫的補寫，須於英語教室完成</div>
+              </div>
+              <div class="dr-item">
+                <div class="dr-name">朗誦型</div>
+                <div class="dr-desc">念讀單字句型、口說作業、Speaking &amp; Reading 文章（善用音檔）、Phonics Rules</div>
+              </div>
+              <div class="dr-item">
+                <div class="dr-name">補考型</div>
+                <div class="dr-desc">協助將某單元不熟悉的單字句型考過、英語階級考補考</div>
+                <div class="dr-limit">不包含平日小考補考</div>
+              </div>
+              <div class="dr-item">
+                <div class="dr-name">觀念解答型</div>
+                <div class="dr-desc">Grammar 觀念講解</div>
+              </div>
+            </div>
+            <div class="dr-foot">
+              助教沒上到那堂課，指派內容要寫到照著做就能執行、做完知道算不算過。
+              <a data-goto="rules">看怎麼寫比較好</a>
+            </div>
           </div>
 
           <div class="grid">
             <div class="field wide">
-              <label>指派補課內容 <span class="hint">助教職責分四型：書寫、朗誦、補考、觀念解答</span></label>
+              <label>指派補課內容</label>
               <textarea name="assignedContent" placeholder="例如：&#10;1. 帶讀單字句型（朗誦型）&#10;2. 補寫 Workbook P.18（書寫型）&#10;3. 補考 U3 單字聽寫（補考型）"></textarea>
             </div>
             <div class="field">
