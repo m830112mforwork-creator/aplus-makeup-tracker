@@ -1,0 +1,495 @@
+// ============================================================
+// 國小英語 補課派工與進度追蹤系統
+// ------------------------------------------------------------
+// 設定方式：
+// 1. 到 https://console.firebase.google.com 開一個新專案
+// 2. 專案設定 → 新增網頁應用程式 → 複製 firebaseConfig
+// 3. 貼到下面 FIREBASE_CONFIG 裡
+// 4. 到 Firestore Database → 建立資料庫（測試模式即可先上線用）
+// ============================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, addDoc, updateDoc, doc,
+  onSnapshot, query, orderBy, serverTimestamp, setDoc, getDocs
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+
+const WEEKDAY_LABEL = { Mon:"週一", Tue:"週二", Wed:"週三", Thu:"週四", Fri:"週五" };
+const OVERDUE_DAYS = 3; // 缺課日期超過幾天沒補課 = 逾期，主任儀表板會標紅
+
+let db = null;
+let records = [];
+let roster = [];
+let state = { role: "teacher", name: "" };
+let selectedSlot = null; // {weekday, time, ta}
+
+// ---------------- Firebase 初始化 ----------------
+function isConfigured(){
+  return FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
+}
+
+function initFirebase(){
+  const banner = document.getElementById("setupBanner");
+  const connStatus = document.getElementById("connStatus");
+  if(!isConfigured()){
+    banner.style.display = "block";
+    banner.innerHTML = "⚠️ 尚未設定 Firebase：請在 app.js 最上方的 FIREBASE_CONFIG 填入妳的新 Firebase 專案設定值，系統才能真正儲存資料。目前是示範狀態，資料不會被保存。";
+    connStatus.textContent = "尚未連線 Firebase（示範模式）";
+    seedLocalDemoData();
+    renderAll();
+    return;
+  }
+  const app = initializeApp(FIREBASE_CONFIG);
+  db = getFirestore(app);
+  connStatus.textContent = "已連線";
+
+  onSnapshot(query(collection(db,"records"), orderBy("absenceDate","desc")), snap => {
+    records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    renderAll();
+  }, err => { connStatus.textContent = "連線錯誤：" + err.message; });
+
+  onSnapshot(collection(db,"roster"), async snap => {
+    roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+    if(roster.length === 0){ await seedDefaultRoster(); }
+    renderAll();
+  }, err => { connStatus.textContent = "連線錯誤：" + err.message; });
+}
+
+async function seedDefaultRoster(){
+  // 對應原本 Excel「補課時段及師資」表的預設值
+  const defaults = [
+    { weekday:"Mon", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Wed", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Thu", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Fri", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Mon", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Wed", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Thu", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Fri", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Mon", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Tue", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Wed", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Thu", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
+    { weekday:"Fri", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
+  ];
+  for(const d of defaults){
+    await addDoc(collection(db,"roster"), d);
+  }
+}
+
+// 示範模式（未設定 Firebase 時）用記憶體假資料，方便妳先看介面
+function seedLocalDemoData(){
+  roster = [
+    { id:"r1", weekday:"Mon", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+    { id:"r2", weekday:"Tue", time:"1:00-2:00", ta:null, quota:0 },
+    { id:"r3", weekday:"Wed", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
+  ];
+  records = [];
+}
+
+// ---------------- 共用工具 ----------------
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function daysSince(dateStr){
+  if(!dateStr) return 0;
+  const d1 = new Date(dateStr), d2 = new Date(todayStr());
+  return Math.floor((d2-d1)/86400000);
+}
+function computeStatus(r){
+  if(r.actualDate) return "done";
+  if(daysSince(r.absenceDate) > OVERDUE_DAYS) return "overdue";
+  return "pending";
+}
+function statusLabel(s){
+  return { pending:"待補課", overdue:"逾期未補", done:"已完成" }[s];
+}
+function showToast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2000);
+}
+function remainingForSlot(weekday, time, ta){
+  const slot = roster.find(s=>s.weekday===weekday && s.time===time && s.ta===ta);
+  if(!slot || !slot.ta) return 0;
+  const used = records.filter(r=>
+    r.slotWeekday===weekday && r.slotTime===time && r.slotTA===ta && !r.actualDate
+  ).length;
+  return slot.quota - used;
+}
+
+// ---------------- 角色切換 / 身分列 ----------------
+document.getElementById("roleTabs").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-role]");
+  if(!btn) return;
+  state.role = btn.dataset.role;
+  document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b===btn));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-"+state.role).classList.add("active");
+  localStorage.setItem("makeup_role", state.role);
+  renderAll();
+});
+const nameInput = document.getElementById("myName");
+nameInput.value = localStorage.getItem("makeup_name") || "";
+state.name = nameInput.value;
+nameInput.addEventListener("input", ()=>{
+  state.name = nameInput.value.trim();
+  localStorage.setItem("makeup_name", state.name);
+  renderAll();
+});
+(function restoreRole(){
+  const saved = localStorage.getItem("makeup_role");
+  if(saved){
+    state.role = saved;
+    document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b.dataset.role===saved));
+    document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+    document.getElementById("view-"+saved).classList.add("active");
+  }
+})();
+
+// ---------------- 老師：時段選擇器 ----------------
+function renderSlotPicker(){
+  const wrap = document.getElementById("slotPicker");
+  const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
+  const times = [...new Set(roster.map(s=>s.time))].sort();
+  let html = '<table class="slot-table"><thead><tr><th></th>';
+  weekdays.forEach(w=> html += `<th>${WEEKDAY_LABEL[w]}</th>`);
+  html += '</tr></thead><tbody>';
+  times.forEach(t=>{
+    html += `<tr><th>${t}</th>`;
+    weekdays.forEach(w=>{
+      const slot = roster.find(s=>s.weekday===w && s.time===t);
+      if(!slot || !slot.ta){
+        html += `<td><div class="slot-cell unavailable">無</div></td>`;
+      } else {
+        const remain = remainingForSlot(w,t,slot.ta);
+        const isSel = selectedSlot && selectedSlot.weekday===w && selectedSlot.time===t && selectedSlot.ta===slot.ta;
+        const cls = remain<=0 ? "slot-cell full" : (isSel ? "slot-cell selected" : "slot-cell");
+        html += `<td><button type="button" class="${cls}" ${remain<=0?"disabled":""}
+          data-w="${w}" data-t="${t}" data-ta="${slot.ta}">${slot.ta}<small>剩 ${Math.max(remain,0)} 名</small></button></td>`;
+      }
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+  wrap.querySelectorAll("button.slot-cell:not(.unavailable)").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      selectedSlot = { weekday:btn.dataset.w, time:btn.dataset.t, ta:btn.dataset.ta };
+      document.querySelector('[name="slotWeekday"]').value = selectedSlot.weekday;
+      document.querySelector('[name="slotTime"]').value = selectedSlot.time;
+      document.querySelector('[name="slotTA"]').value = selectedSlot.ta;
+      renderSlotPicker();
+    });
+  });
+}
+
+// ---------------- 老師：送出新紀錄 ----------------
+document.getElementById("teacherForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  if(!state.name){ showToast("請先在右上角輸入妳的姓名"); return; }
+  if(!selectedSlot){ showToast("請選擇補課時段"); return; }
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd.entries());
+  data.teacherName = state.name;
+  data.actualDate = "";
+  data.method = ""; data.result = ""; data.homeworkStatus = ""; data.taNote = "";
+  data.parentNotified = false;
+  data.createdAt = Date.now();
+
+  if(db){
+    await addDoc(collection(db,"records"), data);
+  } else {
+    records.push({ id:uid(), ...data });
+    renderAll();
+  }
+  e.target.reset();
+  selectedSlot = null;
+  showToast("已送出補課紀錄");
+});
+
+// ---------------- 主任：時段設定 ----------------
+document.getElementById("rosterAddForm").addEventListener("submit", async e=>{
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const data = Object.fromEntries(fd.entries());
+  data.quota = Number(data.quota);
+  const existing = roster.find(s=>s.weekday===data.weekday && s.time===data.time && s.ta===data.ta);
+  if(db){
+    if(existing){ await updateDoc(doc(db,"roster",existing.id), data); }
+    else { await addDoc(collection(db,"roster"), data); }
+  } else {
+    if(existing) Object.assign(existing, data);
+    else roster.push({ id:uid(), ...data });
+    renderAll();
+  }
+  e.target.reset();
+  showToast("已更新時段設定");
+});
+
+// ---------------- 更新紀錄（助教填寫 / 主任編輯共用）----------------
+async function saveRecordFields(id, fields){
+  if(db){ await updateDoc(doc(db,"records",id), fields); }
+  else {
+    const r = records.find(x=>x.id===id);
+    Object.assign(r, fields);
+    renderAll();
+  }
+}
+
+// ---------------- 訊息範本 ----------------
+function buildParentMessage(r){
+  const name = r.studentNameCh || r.studentNameEn || "";
+  return `Hello ${name}'s parents\n${name} 於 ${r.absenceDate} 請假（原因：${r.leaveReason}），已於 ${r.actualDate} 完成補課囉！\n\n補課內容：${r.assignedContent}\n補課方式：${r.method}\n驗收成果：${r.result}\n作業狀況：${r.homeworkStatus}\n\n如有任何問題歡迎與我們聯繫，謝謝您的配合！`;
+}
+function buildDeptRequestMessage(r){
+  return `${r.studentNameCh} 學生補課申請時段：\n\n學生：${r.studentNameCh}（${r.className||""}／${r.homeroomTeacher||""}）\n缺課日期：${r.absenceDate}，原因：${r.leaveReason}\n申請時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n負責助教：${r.slotTA}\n\n請協助提醒學生準時並攜帶課本哦`;
+}
+function buildDeptUpdateMessage(r, statusChoice, newSlot){
+  const box = (label) => statusChoice===label ? "☑" : "☐";
+  return `教學部您好，\n${r.studentNameCh}同學（${r.teacherName}老師）補課狀況更新：\n\n原訂時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n狀態：${box("已完成")}已完成 ${box("改期")}改期 ${box("取消")}取消\n（若改期）新時段：${statusChoice==="改期" ? (newSlot||"___________") : "___________"}\n\n如需協助請告知，謝謝！`;
+}
+
+// ---------------- Modal ----------------
+const modalBackdrop = document.getElementById("modalBackdrop");
+const modalTitle = document.getElementById("modalTitle");
+const modalText = document.getElementById("modalText");
+const modalExtra = document.getElementById("modalExtra");
+function openModal(title, text, extraHtml=""){
+  modalTitle.textContent = title;
+  modalText.value = text;
+  modalExtra.innerHTML = extraHtml;
+  modalBackdrop.classList.add("open");
+}
+document.getElementById("modalClose").addEventListener("click", ()=>modalBackdrop.classList.remove("open"));
+document.getElementById("modalCopy").addEventListener("click", ()=>{
+  navigator.clipboard.writeText(modalText.value).then(()=>showToast("已複製到剪貼簿"));
+});
+
+function openParentMessageModal(r){
+  openModal("傳給家長的訊息", buildParentMessage(r),
+    `<label style="font-size:12.5px; display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+       <input type="checkbox" id="markNotifiedChk" ${r.parentNotified?"checked disabled":""}>
+       ${r.parentNotified ? "已標記為通知家長" : "複製後勾選＝標記已通知家長"}
+     </label>`);
+  const chk = document.getElementById("markNotifiedChk");
+  if(chk && !r.parentNotified){
+    chk.addEventListener("change", async ()=>{
+      if(chk.checked){
+        await saveRecordFields(r.id, { parentNotified:true, parentNotifiedAt: Date.now() });
+        showToast("已標記通知家長");
+      }
+    });
+  }
+}
+function openDeptRequestModal(r){
+  openModal("傳給教學部：申請補課時段", buildDeptRequestMessage(r));
+}
+function openDeptUpdateModal(r){
+  let statusChoice = "已完成";
+  const extra = `
+    <div class="status-radio">
+      <label><input type="radio" name="deptStatus" value="已完成" checked> 已完成</label>
+      <label><input type="radio" name="deptStatus" value="改期"> 改期</label>
+      <label><input type="radio" name="deptStatus" value="取消"> 取消</label>
+    </div>
+    <div class="field" id="newSlotField" style="display:none; margin-bottom:8px;">
+      <label>新時段</label><input id="newSlotInput" placeholder="例如：週三 3:30-4:00">
+    </div>`;
+  openModal("傳給教學部：異動通知", buildDeptUpdateMessage(r, statusChoice), extra);
+  document.querySelectorAll('input[name="deptStatus"]').forEach(radio=>{
+    radio.addEventListener("change", ()=>{
+      statusChoice = radio.value;
+      document.getElementById("newSlotField").style.display = statusChoice==="改期" ? "block" : "none";
+      modalText.value = buildDeptUpdateMessage(r, statusChoice, document.getElementById("newSlotInput").value);
+    });
+  });
+  document.getElementById("newSlotInput").addEventListener("input", e=>{
+    modalText.value = buildDeptUpdateMessage(r, statusChoice, e.target.value);
+  });
+}
+
+// ---------------- 渲染：老師的紀錄列表 ----------------
+function renderTeacherRecords(){
+  const wrap = document.getElementById("teacherRecordList");
+  const mine = records.filter(r=>r.teacherName===state.name);
+  if(!state.name){ wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到妳登記的紀錄</div>'; return; }
+  if(mine.length===0){ wrap.innerHTML = '<div class="empty">還沒有登記任何紀錄</div>'; return; }
+  wrap.innerHTML = mine.map(r=>recordCardHtml(r, "teacher")).join("");
+  bindRecordActions(wrap, mine);
+}
+
+// ---------------- 渲染：助教的待辦 / 已完成 ----------------
+function renderTaLists(){
+  const pendingWrap = document.getElementById("taPendingList");
+  const doneWrap = document.getElementById("taDoneList");
+  if(!state.name){
+    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與時段設定裡的助教姓名一致）</div>';
+    doneWrap.innerHTML = "";
+    return;
+  }
+  const mine = records.filter(r=>r.slotTA===state.name);
+  const pending = mine.filter(r=>!r.actualDate);
+  const done = mine.filter(r=>r.actualDate);
+
+  pendingWrap.innerHTML = pending.length
+    ? pending.map(r=>recordCardHtml(r,"ta")).join("")
+    : '<div class="empty">目前沒有待處理的補課</div>';
+  doneWrap.innerHTML = done.length
+    ? done.map(r=>recordCardHtml(r,"ta")).join("")
+    : '<div class="empty">還沒有已完成的紀錄</div>';
+
+  bindRecordActions(pendingWrap, pending);
+  bindRecordActions(doneWrap, done);
+}
+
+// ---------------- 卡片 HTML ----------------
+function recordCardHtml(r, mode){
+  const status = computeStatus(r);
+  const overdueClass = status==="overdue" ? "overdue" : "";
+  return `
+  <div class="record-card ${overdueClass}" data-id="${r.id}">
+    <div class="rc-head">
+      <div>
+        <div class="rc-title">${r.studentNameCh||""} ${r.studentNameEn?("("+r.studentNameEn+")"):""}</div>
+        <div class="rc-meta">${r.absenceDate}｜${r.leaveReason}｜${r.className||""} ${r.homeroomTeacher||""}</div>
+      </div>
+      <span class="tag ${status}">${statusLabel(status)}</span>
+    </div>
+    <div class="rc-body">
+      <div class="kv"><b>缺課核心課程</b>${r.coreCourse||"-"}</div>
+      <div class="kv"><b>課本單元</b>${r.bookUnit||"-"}</div>
+      <div class="kv"><b>指派補課內容</b>${r.assignedContent||"-"}</div>
+      <div class="kv"><b>預計時長</b>${r.plannedDuration||"-"}</div>
+      <div class="kv"><b>時段/負責人</b>${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）</div>
+      ${r.actualDate ? `
+      <div class="kv"><b>實際補課日期</b>${r.actualDate}</div>
+      <div class="kv"><b>補課方式</b>${r.method||"-"}</div>
+      <div class="kv"><b>驗收成果</b>${r.result||"-"}</div>
+      <div class="kv"><b>作業狀況</b>${r.homeworkStatus||"-"}</div>
+      <div class="kv"><b>家長已通知</b>${r.parentNotified?"是":"否"}</div>` : ``}
+    </div>
+
+    <div class="rc-actions">
+      ${mode==="teacher" ? `
+        <button class="btn secondary small act-dept-request">傳給教學部：申請時段</button>
+        <button class="btn secondary small act-dept-update">傳給教學部：異動通知</button>
+      ` : ``}
+      ${mode==="ta" && !r.actualDate ? `<button class="btn small act-fill">填寫補課成果</button>` : ``}
+      ${mode==="ta" && r.actualDate ? `<button class="btn secondary small act-parent-msg">產生家長通知訊息</button>` : ``}
+    </div>
+
+    ${mode==="ta" && !r.actualDate ? `
+    <div class="ta-form" id="taform-${r.id}">
+      <div class="grid">
+        <div class="field"><label>實際補課日期</label><input type="date" class="f-actualDate" value="${todayStr()}"></div>
+        <div class="field"><label>補課方式</label>
+          <select class="f-method">
+            <option>1對1實體補課</option><option>錄影/音檔自學+TA驗收</option>
+            <option>線上補課 (Zoom)</option><option>課前/課後快跑驗收</option>
+          </select>
+        </div>
+        <div class="field wide"><label>驗收成果</label><input class="f-result" placeholder="例如：單字補考 90分 (已過關)"></div>
+        <div class="field">
+          <label>作業補交狀況</label>
+          <select class="f-hw">
+            <option>已補交並批改</option><option>部分補交(待追蹤)</option>
+            <option>尚未補交</option><option>無需補交</option>
+          </select>
+        </div>
+        <div class="field wide"><label>助教備註與交接</label><textarea class="f-note"></textarea></div>
+      </div>
+      <button class="btn small act-save-ta" style="margin-top:10px;">儲存補課成果</button>
+    </div>` : ``}
+  </div>`;
+}
+
+function bindRecordActions(container, list){
+  container.querySelectorAll(".record-card").forEach(card=>{
+    const r = list.find(x=>x.id===card.dataset.id);
+    if(!r) return;
+    card.querySelector(".act-dept-request")?.addEventListener("click", ()=>openDeptRequestModal(r));
+    card.querySelector(".act-dept-update")?.addEventListener("click", ()=>openDeptUpdateModal(r));
+    card.querySelector(".act-parent-msg")?.addEventListener("click", ()=>openParentMessageModal(r));
+    card.querySelector(".act-fill")?.addEventListener("click", ()=>{
+      document.getElementById("taform-"+r.id).classList.toggle("open");
+    });
+    card.querySelector(".act-save-ta")?.addEventListener("click", async ()=>{
+      const form = document.getElementById("taform-"+r.id);
+      const fields = {
+        actualDate: form.querySelector(".f-actualDate").value,
+        method: form.querySelector(".f-method").value,
+        result: form.querySelector(".f-result").value,
+        homeworkStatus: form.querySelector(".f-hw").value,
+        taNote: form.querySelector(".f-note").value,
+      };
+      if(!fields.actualDate){ showToast("請填實際補課日期"); return; }
+      await saveRecordFields(r.id, fields);
+      showToast("已儲存補課成果");
+    });
+  });
+}
+
+// ---------------- 渲染：主任儀表板 ----------------
+function renderAdmin(){
+  const pending = records.filter(r=>computeStatus(r)==="pending").length;
+  const overdue = records.filter(r=>computeStatus(r)==="overdue").length;
+  const done = records.filter(r=>computeStatus(r)==="done").length;
+  document.getElementById("adminStats").innerHTML = `
+    <div class="stat"><div class="num">${records.length}</div><div class="label">總紀錄數</div></div>
+    <div class="stat"><div class="num">${pending}</div><div class="label">待補課</div></div>
+    <div class="stat overdue"><div class="num">${overdue}</div><div class="label">逾期未補</div></div>
+    <div class="stat done"><div class="num">${done}</div><div class="label">已完成</div></div>
+  `;
+
+  const tbody = document.getElementById("adminTableBody");
+  if(records.length===0){
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">目前沒有紀錄</td></tr>`;
+  } else {
+    tbody.innerHTML = records.map(r=>{
+      const status = computeStatus(r);
+      return `<tr class="${status}">
+        <td><span class="tag ${status}">${statusLabel(status)}</span></td>
+        <td>${r.absenceDate}</td>
+        <td>${r.studentNameCh||""}${r.studentNameEn?(" / "+r.studentNameEn):""}</td>
+        <td>${r.className||""}${r.homeroomTeacher?("／"+r.homeroomTeacher):""}</td>
+        <td>${r.leaveReason||""}</td>
+        <td>${r.assignedContent||""}</td>
+        <td>${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}</td>
+        <td>${r.slotTA||""}</td>
+        <td>${r.actualDate||"-"}</td>
+        <td>${r.result||"-"}</td>
+        <td>${r.parentNotified?"是":"否"}</td>
+      </tr>`;
+    }).join("");
+  }
+
+  // roster editor
+  const rw = document.getElementById("rosterEditor");
+  if(roster.length===0){ rw.innerHTML = '<div class="empty">尚未設定任何時段</div>'; }
+  else {
+    rw.innerHTML = `<div class="table-wrap"><table class="admin-table">
+      <thead><tr><th>星期</th><th>時段</th><th>助教/輔導老師</th><th>名額</th><th>剩餘</th></tr></thead>
+      <tbody>${roster.filter(s=>s.ta).map(s=>`
+        <tr><td>${WEEKDAY_LABEL[s.weekday]||s.weekday}</td><td>${s.time}</td><td>${s.ta}</td>
+        <td>${s.quota}</td><td>${remainingForSlot(s.weekday,s.time,s.ta)}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  }
+}
+
+// ---------------- 統一渲染入口 ----------------
+function renderAll(){
+  renderSlotPicker();
+  renderTeacherRecords();
+  renderTaLists();
+  renderAdmin();
+}
+
+initFirebase();
