@@ -77,12 +77,31 @@
   header .brand .title{font-size:16px; font-weight:700; white-space:nowrap;}
   header .brand .sub{font-size:11.5px; opacity:.72; margin-top:1px;}
   header .identity{display:flex; align-items:center; gap:var(--s-2); flex-shrink:0;}
-  header input{
-    border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14);
-    color:#fff; padding:7px 11px; border-radius:var(--r-sm); width:130px;
+  /* 姓名欄：沒填就什麼紀錄都看不到，所以要夠顯眼 */
+  .name-box{display:flex; align-items:center; gap:var(--s-2);}
+  .name-label{
+    font-size:11.5px; font-weight:500; color:rgba(255,255,255,.8);
+    white-space:nowrap; letter-spacing:.03em;
   }
-  header input::placeholder{color:rgba(255,255,255,.65);}
-  header input:focus{background:rgba(255,255,255,.22); outline-color:#fff;}
+  header input#myName{
+    background:#fff; color:var(--primary); font-weight:700; font-size:14.5px;
+    border:2px solid #fff; padding:8px 14px; border-radius:var(--r-sm);
+    width:158px; transition:background .2s, border-color .2s, color .2s;
+  }
+  header input#myName::placeholder{color:#A49CC0; font-weight:400; font-size:13px;}
+  header input#myName:focus{outline:3px solid rgba(255,255,255,.45); outline-offset:1px;}
+  /* 還沒填名字：整格轉成琥珀色並輕微呼吸，提醒使用者先填 */
+  header input#myName.empty{
+    background:var(--gold-soft); border-color:var(--gold); color:#7A5D14;
+    animation:nameNudge 2.4s ease-in-out infinite;
+  }
+  @keyframes nameNudge{
+    0%,100%{ box-shadow:0 0 0 0 rgba(184,144,46,.55); }
+    55%    { box-shadow:0 0 0 6px rgba(184,144,46,0); }
+  }
+  @media (prefers-reduced-motion:reduce){
+    header input#myName.empty{animation:none;}
+  }
   .btn-signout{
     border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14);
     color:#fff; padding:7px 12px; border-radius:var(--r-sm); font-size:12.5px; font-weight:500;
@@ -398,7 +417,9 @@
     header{flex-wrap:wrap; padding:var(--s-3) var(--s-4); gap:var(--s-2);}
     header .brand .title{font-size:14.5px; white-space:normal;}
     header .identity{width:100%; justify-content:space-between;}
-    header input{width:auto; flex:1; min-width:0; max-width:150px;}
+    .name-label{display:none;}          /* 手機版空間不夠，靠 placeholder 表達 */
+    .name-box{flex:1; min-width:0; max-width:170px;}
+    header input#myName{width:100%; font-size:14px; padding:8px 11px;}
     .role-tabs{flex:1;}
     .role-tabs button{flex:1; padding:7px 6px; font-size:12px;}
     main{padding:var(--s-4) var(--s-3) 60px;}
@@ -469,7 +490,10 @@
       <button data-role="admin">管理職</button>
       <button data-role="rules">規則說明</button>
     </div>
-    <input id="myName" placeholder="你的姓名" />
+    <div class="name-box">
+      <span class="name-label" id="nameLabel">填表老師</span>
+      <input id="myName" placeholder="填表老師名字" autocomplete="name" />
+    </div>
     <button type="button" class="btn-signout" id="signOutBtn" hidden>登出</button>
   </div>
 </header>

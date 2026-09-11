@@ -275,12 +275,30 @@ document.querySelectorAll("[data-goto]").forEach(a=>{
 });
 
 const nameInput = document.getElementById("myName");
+const nameLabel = document.getElementById("nameLabel");
+
+// 這一欄決定你看得到誰的紀錄，沒填等於整個系統是空的，所以空白時要醒目
+const NAME_HINT = {
+  teacher: { label:"填表老師", placeholder:"填表老師名字" },
+  ta:      { label:"助教",     placeholder:"助教名字" },
+  admin:   { label:"管理職",   placeholder:"你的名字" },
+  rules:   { label:"填表老師", placeholder:"填表老師名字" },
+};
+
+function refreshNameField(){
+  const hint = NAME_HINT[state.role] || NAME_HINT.teacher;
+  nameLabel.textContent = hint.label;
+  nameInput.placeholder = hint.placeholder;
+  nameInput.classList.toggle("empty", !state.name);
+}
+
 nameInput.value = localStorage.getItem("makeup_name") || "";
 state.name = nameInput.value;
 let nameTimer = null;
 nameInput.addEventListener("input", ()=>{
   state.name = nameInput.value.trim();
   localStorage.setItem("makeup_name", state.name);
+  refreshNameField();
   // 每打一個字就重畫整頁太浪費，等使用者停下來再畫
   clearTimeout(nameTimer);
   nameTimer = setTimeout(renderAll, 250);
@@ -819,6 +837,7 @@ document.getElementById("adminTaFilter").addEventListener("change", e=>{
 
 // ---------------- 統一渲染入口 ----------------
 function renderAll(){
+  refreshNameField();
   renderSlotPicker();
   renderTeacherRecords();
   renderTaLists();
