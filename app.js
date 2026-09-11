@@ -409,7 +409,8 @@ function buildParentMessage(r){
   return `Hello ${name}'s parents\n${name} 於 ${r.absenceDate} 請假（原因：${r.leaveReason}），已於 ${r.actualDate} 完成補課囉！\n\n補課內容：${r.assignedContent}\n補課方式：${r.method}\n驗收成果：${r.result}\n作業狀況：${r.homeworkStatus}\n\n如有任何問題歡迎與我們聯繫，謝謝您的配合！`;
 }
 function buildDeptRequestMessage(r){
-  return `${r.studentNameCh} 學生補課申請時段：\n\n學生：${r.studentNameCh}（${r.className||""}／${r.homeroomTeacher||""}）\n缺課日期：${r.absenceDate}，原因：${r.leaveReason}\n申請時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n負責助教：${r.slotTA}\n\n請協助提醒學生準時並攜帶課本哦`;
+  const bookLine = [r.book, r.unit].filter(Boolean).join(" ");
+  return `${r.studentNameCh} 學生補課申請時段：\n\n學生：${r.studentNameCh}（${r.className||""}／${r.homeroomTeacher||""}）\n缺課日期：${r.absenceDate}，原因：${r.leaveReason}\n申請時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n負責助教：${r.slotTA}\n需攜帶：${bookLine || "（請見指派內容）"}\n\n請協助提醒學生準時並攜帶課本哦`;
 }
 function buildDeptUpdateMessage(r, statusChoice, newSlot){
   const box = (label) => statusChoice===label ? "☑" : "☐";
@@ -607,7 +608,8 @@ function recordCardHtml(r, mode){
     <div class="rc-body">
       ${kv("教學老師", r.teachingTeacher)}
       ${kv("缺課核心課程", r.coreCourse)}
-      ${kv("課本單元", r.bookUnit)}
+      ${kv("課本", r.book)}
+      ${kv("單元", r.unit)}
       ${kv("指派補課內容", r.assignedContent)}
       ${kv("預計時長", r.plannedDuration)}
       ${kv("時段/負責人", `${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）`)}
@@ -708,7 +710,7 @@ function matchesAdminFilter(r){
   if(!q) return true;
   return [r.studentNameCh, r.studentNameEn, r.className, r.grade,
           r.homeroomTeacher, r.teachingTeacher, r.teacherName, r.slotTA,
-          r.leaveReason, r.bookUnit, r.assignedContent]
+          r.leaveReason, r.book, r.unit, r.assignedContent]
     .some(v => String(v||"").toLowerCase().includes(q));
 }
 
