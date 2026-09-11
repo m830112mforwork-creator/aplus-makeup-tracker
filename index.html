@@ -5,218 +5,395 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>國小英語 補課派工與進度追蹤系統</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
     --ink:#20263B;
-    --ink-soft:#565D77;
-    --paper:#FAF8F3;
+    --ink-soft:#5B6279;
+    --ink-faint:#8A90A3;
+    --paper:#F7F5F0;
     --panel:#FFFFFF;
-    --line:#E4DFD3;
+    --line:#E5E0D5;
+    --line-soft:#EFEBE2;
     --primary:#3D3466;
+    --primary-hover:#332B57;
     --primary-soft:#EFEBF7;
     --gold:#B8902E;
     --gold-soft:#FBF3DF;
+    --gold-line:#EAD9A6;
     --ok:#3F7A5C;
     --ok-soft:#E7F3EC;
     --warn:#B4472E;
     --warn-soft:#FBEAE5;
-    --radius:10px;
-    font-family:"Noto Sans TC","Inter",sans-serif;
+
+    --r-sm:7px; --r-md:10px; --r-lg:14px;
+    --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:22px; --s-6:30px;
+    --shadow:0 1px 2px rgba(32,38,59,.04), 0 4px 14px rgba(32,38,59,.05);
+    --header-h:60px;
+
+    font-family:"Noto Sans TC","Inter",system-ui,sans-serif;
   }
   *{box-sizing:border-box;}
   body{
-    margin:0;
-    background:var(--paper);
-    color:var(--ink);
-    font-size:15px;
-    line-height:1.6;
+    margin:0; background:var(--paper); color:var(--ink);
+    font-size:15px; line-height:1.6;
+    -webkit-font-smoothing:antialiased;
   }
-  h1,h2,h3{
-    font-weight:700;
-    margin:0 0 4px;
-    letter-spacing:.01em;
-  }
-  button{
-    font-family:inherit;
-    cursor:pointer;
-  }
-  input,select,textarea,button{
-    font-family:inherit;
-    font-size:14px;
-  }
-  /* ---------- top bar ---------- */
-  header{
-    position:sticky; top:0; z-index:20;
-    background:var(--primary);
-    color:#fff;
-    padding:14px 22px;
-    display:flex; align-items:center; justify-content:space-between;
-    flex-wrap:wrap; gap:10px;
-  }
-  header .brand{display:flex; flex-direction:column;}
-  header .brand .title{font-size:17px; font-weight:700;}
-  header .brand .sub{font-size:12px; opacity:.75; margin-top:2px;}
-  header .identity{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
-  header select, header input{
-    border:1px solid rgba(255,255,255,.35);
-    background:rgba(255,255,255,.12);
-    color:#fff;
-    padding:7px 10px;
-    border-radius:8px;
-  }
-  header select option{color:#20263B;}
-  header input::placeholder{color:rgba(255,255,255,.7);}
-  .role-tabs{display:flex; gap:4px; background:rgba(255,255,255,.12); border-radius:9px; padding:3px;}
-  .role-tabs button{
-    border:none; background:transparent; color:rgba(255,255,255,.75);
-    padding:7px 14px; border-radius:7px; font-weight:600; font-size:13px;
-  }
-  .role-tabs button.active{background:#fff; color:var(--primary);}
+  h1,h2,h3{font-weight:700; margin:0; letter-spacing:.01em;}
+  input,select,textarea,button{font-family:inherit; font-size:14px;}
+  button{cursor:pointer;}
+  :focus-visible{outline:2px solid var(--primary); outline-offset:2px; border-radius:4px;}
 
-  main{max-width:1180px; margin:0 auto; padding:24px 20px 60px;}
-  .view{display:none;}
-  .view.active{display:block;}
-
-  .panel{
-    background:var(--panel);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:20px;
-    margin-bottom:18px;
-  }
-  .panel > h2{font-size:16px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid var(--line);}
-  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;}
-  .field label{display:block; font-size:12.5px; color:var(--ink-soft); margin-bottom:4px; font-weight:600;}
-  .field input, .field select, .field textarea{
-    width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:7px;
-    background:#fff; color:var(--ink);
-  }
-  .field textarea{resize:vertical; min-height:56px;}
-  .field.wide{grid-column:1/-1;}
-
-  .btn{
-    display:inline-flex; align-items:center; gap:6px;
-    border:1px solid var(--primary); background:var(--primary); color:#fff;
-    padding:9px 16px; border-radius:8px; font-weight:600; font-size:13.5px;
-  }
-  .btn.secondary{background:#fff; color:var(--primary);}
-  .btn.ghost{background:transparent; border-color:var(--line); color:var(--ink-soft);}
-  .btn.small{padding:6px 11px; font-size:12.5px;}
-  .btn:disabled{opacity:.4; cursor:not-allowed;}
-  .btn.warn{background:var(--warn); border-color:var(--warn);}
-
-  /* slot grid */
-  .slot-table{width:100%; border-collapse:collapse; font-size:13px;}
-  .slot-table th, .slot-table td{border:1px solid var(--line); padding:6px; text-align:center;}
-  .slot-table th{background:var(--primary-soft); color:var(--primary); font-weight:700;}
-  .slot-cell{
-    width:100%; border:1px solid var(--line); background:#fff; border-radius:6px;
-    padding:8px 4px; font-size:12.5px; font-weight:600; color:var(--ink);
-  }
-  .slot-cell.full{color:#B0A9A0; background:#F4F1EA; text-decoration:line-through;}
-  .slot-cell.unavailable{color:#B0A9A0; background:#F4F1EA;}
-  .slot-cell.selected{background:var(--primary); color:#fff; border-color:var(--primary);}
-  .slot-cell small{display:block; font-weight:400; opacity:.75; margin-top:2px;}
-
-  /* record cards */
-  .record-card{
-    border:1px solid var(--line); border-radius:9px; padding:14px 16px; margin-bottom:10px; background:#fff;
-  }
-  .record-card.overdue{border-color:var(--warn); background:var(--warn-soft);}
-  .record-card .rc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:10px; flex-wrap:wrap;}
-  .record-card .rc-title{font-weight:700; font-size:15px;}
-  .record-card .rc-meta{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
-  .tag{display:inline-block; padding:2px 9px; border-radius:99px; font-size:11.5px; font-weight:700;}
-  .tag.pending{background:var(--gold-soft); color:var(--gold);}
-  .tag.done{background:var(--ok-soft); color:var(--ok);}
-  .tag.overdue{background:var(--warn-soft); color:var(--warn);}
-  .rc-body{margin-top:10px; font-size:13.5px; display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:6px 14px;}
-  .rc-body .kv b{display:block; font-size:11.5px; color:var(--ink-soft); font-weight:600;}
-  .rc-actions{margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;}
-  .ta-form{margin-top:12px; padding-top:12px; border-top:1px dashed var(--line); display:none;}
-  .ta-form.open{display:block;}
-
-  /* dashboard */
-  .stat-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:18px;}
-  .stat{border:1px solid var(--line); border-radius:9px; padding:14px; background:#fff;}
-  .stat .num{font-size:26px; font-weight:700; font-family:"Inter",sans-serif;}
-  .stat .label{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
-  .stat.overdue .num{color:var(--warn);}
-  .stat.done .num{color:var(--ok);}
-
-  table.admin-table{width:100%; border-collapse:collapse; font-size:12.8px;}
-  table.admin-table th, table.admin-table td{border:1px solid var(--line); padding:7px 8px; text-align:left; vertical-align:top;}
-  table.admin-table th{background:var(--primary-soft); color:var(--primary); position:sticky; top:56px;}
-  table.admin-table tr.overdue td{background:var(--warn-soft);}
-  table.admin-table tr.done td{background:var(--ok-soft);}
-  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:9px;}
-
-  .empty{color:var(--ink-soft); font-size:13.5px; padding:18px; text-align:center;}
-
-  /* modal */
-  .modal-backdrop{
-    display:none; position:fixed; inset:0; background:rgba(32,38,59,.5); z-index:50;
-    align-items:center; justify-content:center; padding:20px;
-  }
-  .modal-backdrop.open{display:flex;}
-  .modal{
-    background:#fff; border-radius:12px; max-width:480px; width:100%; padding:22px;
-    max-height:85vh; overflow-y:auto;
-  }
-  .modal h3{margin-bottom:10px;}
-  .modal textarea{
-    width:100%; min-height:220px; border:1px solid var(--line); border-radius:8px; padding:12px;
-    font-size:13.5px; line-height:1.7; white-space:pre-wrap;
-  }
-  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:12px;}
-  .status-radio{display:flex; gap:10px; margin:10px 0; font-size:13px;}
-  .status-radio label{display:flex; align-items:center; gap:5px;}
-
-  .banner{
-    background:var(--gold-soft); border:1px solid #EAD9A6; color:#7A5D14;
-    border-radius:9px; padding:10px 14px; font-size:12.8px; margin-bottom:16px;
-  }
-  .toast{
-    position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
-    background:var(--ink); color:#fff; padding:10px 18px; border-radius:8px; font-size:13.5px;
-    opacity:0; pointer-events:none; transition:opacity .25s; z-index:60;
-  }
-  .toast.show{opacity:1;}
-
-  /* ---------- 登入畫面 ---------- */
+  /* ============ 登入畫面 ============ */
   .lock-screen{
     position:fixed; inset:0; z-index:80; background:var(--paper);
     display:flex; align-items:center; justify-content:center; padding:20px;
   }
   .lock-screen[hidden]{display:none;}
   .lock-card{
-    background:var(--panel); border:1px solid var(--line); border-radius:14px;
-    padding:30px 28px; width:100%; max-width:360px; text-align:center;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-lg);
+    box-shadow:var(--shadow);
+    padding:32px 28px; width:100%; max-width:360px; text-align:center;
   }
-  .lock-card .lock-title{font-size:17px; font-weight:700; margin-bottom:4px;}
-  .lock-card .lock-sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; line-height:1.55;}
+  .lock-card .lock-title{font-size:17px; font-weight:700; margin-bottom:var(--s-1);}
+  .lock-card .lock-sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:var(--s-5); line-height:1.55;}
   .lock-card input{
-    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:var(--r-sm);
     background:#fff; color:var(--ink); text-align:center; letter-spacing:.08em;
   }
-  .lock-card .btn{width:100%; justify-content:center; margin-top:12px;}
-  .lock-error{
-    color:var(--warn); font-size:12.5px; margin-top:10px; min-height:18px;
+  .lock-card .btn{width:100%; justify-content:center; margin-top:var(--s-3);}
+  .lock-error{color:var(--warn); font-size:12.5px; margin-top:var(--s-3); min-height:18px;}
+
+  /* ============ 標題列 ============ */
+  header{
+    position:sticky; top:0; z-index:30;
+    background:var(--primary); color:#fff;
+    padding:0 var(--s-5);
+    min-height:var(--header-h);
+    display:flex; align-items:center; justify-content:space-between; gap:var(--s-4);
   }
-  header .btn-signout{
-    border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.12);
-    color:#fff; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:600;
+  header .brand{display:flex; flex-direction:column; min-width:0;}
+  header .brand .title{font-size:16px; font-weight:700; white-space:nowrap;}
+  header .brand .sub{font-size:11.5px; opacity:.72; margin-top:1px;}
+  header .identity{display:flex; align-items:center; gap:var(--s-2); flex-shrink:0;}
+  header input{
+    border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14);
+    color:#fff; padding:7px 11px; border-radius:var(--r-sm); width:130px;
+  }
+  header input::placeholder{color:rgba(255,255,255,.65);}
+  header input:focus{background:rgba(255,255,255,.22); outline-color:#fff;}
+  .btn-signout{
+    border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14);
+    color:#fff; padding:7px 12px; border-radius:var(--r-sm); font-size:12.5px; font-weight:500;
+  }
+  .btn-signout:hover{background:rgba(255,255,255,.24);}
+
+  .role-tabs{display:flex; gap:2px; background:rgba(0,0,0,.16); border-radius:9px; padding:3px;}
+  .role-tabs button{
+    border:none; background:transparent; color:rgba(255,255,255,.78);
+    padding:7px 13px; border-radius:6px; font-weight:500; font-size:13px;
+    white-space:nowrap; transition:background .15s, color .15s;
+  }
+  .role-tabs button:hover{color:#fff; background:rgba(255,255,255,.12);}
+  .role-tabs button.active{background:#fff; color:var(--primary); font-weight:700;}
+
+  /* ============ 版面 ============ */
+  main{max-width:1160px; margin:0 auto; padding:var(--s-5) var(--s-5) 72px;}
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
+    box-shadow:var(--shadow);
+    padding:var(--s-5); margin-bottom:var(--s-4);
+  }
+  .panel > h2{
+    font-size:15.5px; margin-bottom:var(--s-4);
+    padding-bottom:var(--s-3); border-bottom:1px solid var(--line-soft);
+    display:flex; align-items:center; justify-content:space-between; gap:var(--s-3);
+  }
+  .panel > h2 .count{
+    font-size:12px; font-weight:500; color:var(--ink-faint);
+    background:var(--paper); border:1px solid var(--line-soft);
+    padding:2px 9px; border-radius:20px;
   }
 
-  @media (max-width:640px){
-    table.admin-table th{position:static;}
+  /* 表單 */
+  .form-section{margin-bottom:var(--s-5);}
+  .form-section:last-of-type{margin-bottom:0;}
+  .form-section > .sec-head{
+    font-size:12px; font-weight:700; color:var(--primary);
+    letter-spacing:.06em; margin-bottom:var(--s-3);
+    display:flex; align-items:center; gap:var(--s-2);
+  }
+  .form-section > .sec-head::after{content:""; flex:1; height:1px; background:var(--line-soft);}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:var(--s-3);}
+  .field label{
+    display:block; font-size:12px; color:var(--ink-soft);
+    margin-bottom:var(--s-1); font-weight:500;
+  }
+  .field label .hint{color:var(--ink-faint); font-weight:400;}
+  .field input, .field select, .field textarea{
+    width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:var(--r-sm);
+    background:#fff; color:var(--ink); transition:border-color .15s;
+  }
+  .field input:hover, .field select:hover, .field textarea:hover{border-color:#CFC8B8;}
+  .field textarea{resize:vertical; min-height:70px; line-height:1.6;}
+  .field.wide{grid-column:1/-1;}
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    border:1px solid var(--primary); background:var(--primary); color:#fff;
+    padding:10px 18px; border-radius:var(--r-sm); font-weight:700; font-size:13.5px;
+    transition:background .15s, border-color .15s;
+  }
+  .btn:hover{background:var(--primary-hover); border-color:var(--primary-hover);}
+  .btn.secondary{background:#fff; color:var(--primary);}
+  .btn.secondary:hover{background:var(--primary-soft);}
+  .btn.ghost{background:transparent; border-color:var(--line); color:var(--ink-soft);}
+  .btn.ghost:hover{background:var(--paper); color:var(--ink);}
+  .btn.small{padding:7px 12px; font-size:12.5px;}
+  .btn:disabled{opacity:.45; cursor:not-allowed;}
+
+  /* 時段選擇 */
+  #slotPicker{overflow-x:auto;}
+  .slot-table{width:100%; border-collapse:separate; border-spacing:4px; font-size:13px;}
+  .slot-table th{
+    background:var(--primary-soft); color:var(--primary); font-weight:700;
+    padding:7px 4px; border-radius:var(--r-sm); font-size:12.5px; white-space:nowrap;
+  }
+  .slot-table td{padding:0;}
+  .slot-cell{
+    width:100%; border:1px solid var(--line); background:#fff; border-radius:var(--r-sm);
+    padding:9px 4px; font-size:12.5px; font-weight:500; color:var(--ink); line-height:1.35;
+    transition:border-color .15s, background .15s;
+  }
+  .slot-cell:hover:not(:disabled){border-color:var(--primary); background:var(--primary-soft);}
+  .slot-cell.full, .slot-cell.unavailable{
+    color:var(--ink-faint); background:var(--paper); border-style:dashed; cursor:not-allowed;
+  }
+  .slot-cell.full{text-decoration:line-through;}
+  .slot-cell.selected{
+    background:var(--primary); color:#fff; border-color:var(--primary); font-weight:700;
+  }
+  .slot-cell small{display:block; font-weight:400; opacity:.72; margin-top:2px; font-size:11px;}
+  .slot-multi{display:flex; flex-direction:column; gap:4px;}
+
+  /* 狀態標籤 */
+  .tag{
+    display:inline-block; font-size:11.5px; font-weight:700; padding:3px 10px;
+    border-radius:20px; white-space:nowrap; border:1px solid transparent;
+  }
+  .tag.pending{background:var(--gold-soft); color:#7A5D14; border-color:var(--gold-line);}
+  .tag.overdue{background:var(--warn-soft); color:var(--warn); border-color:#F0CFC6;}
+  .tag.done{background:var(--ok-soft); color:var(--ok); border-color:#C9E2D5;}
+
+  /* 紀錄卡 */
+  .record-card{
+    border:1px solid var(--line); border-left:3px solid var(--gold);
+    border-radius:var(--r-md); padding:var(--s-4); margin-bottom:var(--s-3); background:#fff;
+  }
+  .record-card.overdue{border-left-color:var(--warn); background:#FFFCFB;}
+  .record-card.done{border-left-color:var(--ok);}
+  .rc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:var(--s-3);}
+  .rc-title{font-weight:700; font-size:15px;}
+  .rc-meta{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
+  .rc-body{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    gap:var(--s-1) var(--s-4); margin-top:var(--s-3);
+    padding-top:var(--s-3); border-top:1px solid var(--line-soft);
+  }
+  .kv{font-size:13px; display:flex; gap:var(--s-2); align-items:baseline;}
+  .kv b{
+    font-weight:500; color:var(--ink-soft); font-size:12px;
+    flex-shrink:0; min-width:82px;
+  }
+  .kv span{white-space:pre-wrap;}
+  .rc-actions{display:flex; gap:var(--s-2); flex-wrap:wrap; margin-top:var(--s-3);}
+
+  .ta-form{display:none; margin-top:var(--s-4); padding-top:var(--s-4); border-top:1px dashed var(--line);}
+  .ta-form.open{display:block;}
+
+  /* 主任：統計 */
+  .stat-row{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:var(--s-3); margin-bottom:var(--s-4);
+  }
+  .stat{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
+    box-shadow:var(--shadow); padding:var(--s-4) var(--s-5);
+  }
+  .stat .num{font-size:28px; font-weight:700; line-height:1.15; font-family:"Inter",sans-serif;}
+  .stat .label{font-size:12px; color:var(--ink-soft); margin-top:2px;}
+  .stat.overdue .num{color:var(--warn);}
+  .stat.done .num{color:var(--ok);}
+  .stat.pending .num{color:var(--gold);}
+
+  /* 篩選列 */
+  .filter-bar{
+    display:flex; gap:var(--s-2); flex-wrap:wrap; align-items:center;
+    margin-bottom:var(--s-4);
+  }
+  .filter-bar input[type="search"]{
+    flex:1; min-width:170px; padding:8px 12px;
+    border:1px solid var(--line); border-radius:var(--r-sm); background:#fff;
+  }
+  .filter-bar select{
+    padding:8px 11px; border:1px solid var(--line); border-radius:var(--r-sm); background:#fff;
+  }
+  .chip-row{display:flex; gap:4px; background:var(--paper); border:1px solid var(--line-soft); border-radius:9px; padding:3px;}
+  .chip-row button{
+    border:none; background:transparent; color:var(--ink-soft);
+    padding:6px 12px; border-radius:6px; font-size:12.5px; font-weight:500; white-space:nowrap;
+  }
+  .chip-row button:hover{background:#fff; color:var(--ink);}
+  .chip-row button.active{background:var(--primary); color:#fff; font-weight:700;}
+
+  /* 表格 */
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r-md);}
+  table.admin-table{width:100%; border-collapse:collapse; font-size:13px; min-width:900px;}
+  table.admin-table th, table.admin-table td{
+    padding:9px 11px; text-align:left; border-bottom:1px solid var(--line-soft);
+    vertical-align:top;
+  }
+  table.admin-table th{
+    background:var(--primary-soft); color:var(--primary); font-weight:700;
+    font-size:12px; white-space:nowrap; border-bottom:1px solid var(--line);
+  }
+  table.admin-table tbody tr:last-child td{border-bottom:none;}
+  table.admin-table tbody tr:hover td{background:var(--paper);}
+  table.admin-table tr.overdue td{background:var(--warn-soft);}
+  table.admin-table tr.done td{background:#FBFDFC;}
+  .roster-table{min-width:0;}
+
+  .empty{color:var(--ink-faint); font-size:13.5px; padding:26px 18px; text-align:center;}
+
+  /* 規則說明 */
+  .rules-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:var(--s-4);}
+  .rule-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
+    box-shadow:var(--shadow); padding:var(--s-5);
+  }
+  .rule-card > h3{
+    font-size:14.5px; margin-bottom:var(--s-4); padding-bottom:var(--s-3);
+    border-bottom:2px solid var(--primary-soft); color:var(--primary);
+  }
+  .rule-item{margin-bottom:var(--s-4);}
+  .rule-item:last-child{margin-bottom:0;}
+  .rule-item .rule-name{
+    font-weight:700; font-size:13.5px; margin-bottom:3px;
+    display:flex; align-items:center; gap:var(--s-2);
+  }
+  .rule-item .rule-name .dot{
+    width:7px; height:7px; border-radius:50%; background:var(--gold); flex-shrink:0;
+  }
+  .rule-item .rule-desc{font-size:13px; color:var(--ink-soft); padding-left:15px; line-height:1.65;}
+  ol.rule-list{margin:0; padding-left:20px; font-size:13px; color:var(--ink-soft); line-height:1.7;}
+  ol.rule-list li{margin-bottom:var(--s-2);}
+  ol.rule-list li:last-child{margin-bottom:0;}
+  ol.rule-list li strong{color:var(--ink); font-weight:700;}
+  .rule-note{
+    background:var(--warn-soft); border:1px solid #F0CFC6; color:#8C3623;
+    border-radius:var(--r-sm); padding:8px 12px; font-size:12.5px;
+    margin-top:var(--s-2); line-height:1.6;
+  }
+
+  /* 提示條 */
+  .banner{
+    background:var(--gold-soft); border:1px solid var(--gold-line); color:#7A5D14;
+    border-radius:var(--r-sm); padding:11px 15px; font-size:12.8px;
+    margin-bottom:var(--s-4); line-height:1.65;
+  }
+  .callout{
+    background:var(--primary-soft); border:1px solid #DCD4EE; border-radius:var(--r-sm);
+    padding:12px 15px; font-size:12.8px; color:var(--ink-soft);
+    margin-bottom:var(--s-4); line-height:1.7;
+  }
+  .callout b{color:var(--primary);}
+  .callout a{color:var(--primary); font-weight:700; cursor:pointer; text-decoration:underline;}
+
+  /* modal */
+  .modal-backdrop{
+    display:none; position:fixed; inset:0; background:rgba(32,38,59,.55); z-index:60;
+    align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal{
+    background:#fff; border-radius:var(--r-lg); max-width:500px; width:100%; padding:24px;
+    max-height:86vh; overflow-y:auto;
+  }
+  .modal h3{margin-bottom:var(--s-3); font-size:15.5px;}
+  .modal textarea{
+    width:100%; min-height:230px; border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:13px; font-size:13.5px; line-height:1.75; white-space:pre-wrap;
+    background:var(--paper); color:var(--ink);
+  }
+  .modal-actions{display:flex; justify-content:flex-end; gap:var(--s-2); margin-top:var(--s-3);}
+  .status-radio{display:flex; gap:var(--s-3); margin:var(--s-3) 0; font-size:13px; flex-wrap:wrap;}
+  .status-radio label{display:flex; align-items:center; gap:5px; cursor:pointer;}
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background:var(--ink); color:#fff; padding:11px 20px; border-radius:var(--r-sm);
+    font-size:13.5px; opacity:0; pointer-events:none; transition:opacity .25s; z-index:90;
+    box-shadow:0 6px 20px rgba(0,0,0,.2);
+  }
+  .toast.show{opacity:1;}
+
+  /* ============ 手機 ============ */
+  @media (max-width:860px){
+    header{flex-wrap:wrap; padding:var(--s-3) var(--s-4); gap:var(--s-2);}
+    header .brand .title{font-size:14.5px; white-space:normal;}
+    header .identity{width:100%; justify-content:space-between;}
+    header input{width:auto; flex:1; min-width:0; max-width:150px;}
+    .role-tabs{flex:1;}
+    .role-tabs button{flex:1; padding:7px 6px; font-size:12px;}
+    main{padding:var(--s-4) var(--s-3) 60px;}
+    .panel{padding:var(--s-4); border-radius:var(--r-sm);}
+    .kv b{min-width:70px;}
+
+    /* 表格改成一筆一張卡 */
+    .table-wrap{border:none; border-radius:0; overflow:visible;}
+    table.admin-table{min-width:0; display:block;}
+    table.admin-table thead{display:none;}
+    table.admin-table tbody, table.admin-table tr, table.admin-table td{display:block; width:100%;}
+    table.admin-table tr{
+      border:1px solid var(--line); border-radius:var(--r-sm);
+      margin-bottom:var(--s-3); padding:var(--s-3); background:#fff;
+    }
+    table.admin-table tr.overdue{border-left:3px solid var(--warn);}
+    table.admin-table tr.done{border-left:3px solid var(--ok);}
+    table.admin-table td{
+      border:none; padding:3px 0; display:flex; gap:var(--s-3);
+      justify-content:space-between; align-items:baseline;
+    }
+    table.admin-table td::before{
+      content:attr(data-label); font-size:11.5px; color:var(--ink-soft);
+      font-weight:500; flex-shrink:0;
+    }
+    table.admin-table td:empty{display:none;}
+    table.admin-table tr.overdue td, table.admin-table tr.done td{background:transparent;}
+    table.admin-table tbody tr:hover td{background:transparent;}
+
+    /* 五欄硬擠進手機寬度會讓助教姓名斷行，改成這一區自己左右捲動 */
+    .slot-table{font-size:12px; border-spacing:3px; min-width:440px;}
+    .slot-cell{padding:8px 3px; font-size:12px;}
+    .slot-cell small{font-size:10.5px;}
+    .stat{padding:var(--s-3) var(--s-4);}
+    .stat .num{font-size:23px;}
+    .filter-bar{gap:var(--s-2);}
+    .filter-bar input[type="search"]{min-width:100%;}
+    .filter-bar select{width:100%;}
+    .chip-row{width:100%;}
+    .chip-row button{flex:1; padding:6px 4px;}
   }
 </style>
 </head>
 <body>
 
-<!-- ========== 登入畫面（通過 Firebase Auth 驗證，不是只有前端擋） ========== -->
+<!-- ========== 登入畫面（只在 REQUIRE_PASSWORD = true 時出現） ========== -->
 <div class="lock-screen" id="lockScreen" hidden>
   <form class="lock-card" id="lockForm">
     <div class="lock-title">國小英語 補課派工系統</div>
@@ -235,10 +412,11 @@
   <div class="identity">
     <div class="role-tabs" id="roleTabs">
       <button data-role="teacher" class="active">老師</button>
-      <button data-role="ta">助教/輔導老師</button>
+      <button data-role="ta">助教</button>
       <button data-role="admin">主任</button>
+      <button data-role="rules">規則說明</button>
     </div>
-    <input id="myName" placeholder="輸入你的姓名" />
+    <input id="myName" placeholder="你的姓名" />
     <button type="button" class="btn-signout" id="signOutBtn" hidden>登出</button>
   </div>
 </header>
@@ -247,79 +425,128 @@
 
   <div class="banner" id="setupBanner" style="display:none;"></div>
 
-  <!-- ========== 老師 VIEW ========== -->
+  <!-- ================= 老師 ================= -->
   <section class="view active" id="view-teacher">
+
+    <div class="callout">
+      <b>送出前請先確認</b>：課本教材已備好給助教 ・ 前一天完成交接 ・ 已在班提醒學生時間與攜帶物品 ・ 補課後要查看紀錄並簽名。
+      完整內容看 <a data-goto="rules">規則說明</a>。
+    </div>
+
     <div class="panel">
       <h2>新增請假補課紀錄</h2>
       <form id="teacherForm">
-        <div class="grid">
-          <div class="field"><label>學生中文名</label><input name="studentNameCh" required></div>
-          <div class="field"><label>學生英文名</label><input name="studentNameEn"></div>
-          <div class="field"><label>年級</label><input name="grade" placeholder="例如：三年級"></div>
-          <div class="field"><label>英語班級</label><input name="className"></div>
-          <div class="field"><label>英語導師</label><input name="homeroomTeacher"></div>
-          <div class="field"><label>英語教室</label><input name="classroom"></div>
-          <div class="field"><label>缺課日期</label><input type="date" name="absenceDate" required></div>
-          <div class="field">
-            <label>請假原因</label>
-            <select name="leaveReason">
-              <option>事假</option><option>病假</option><option>公假</option>
-              <option>學校活動</option><option>其他</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>缺課核心課程（VAA/OAA=書寫朗誦、GAA=文法、PAA=發音）</label>
-            <select name="coreCourse">
-              <option>VAA/OAA</option><option>GAA</option><option>PAA</option><option>其他</option>
-            </select>
-          </div>
-          <div class="field"><label>課本及單元 (ch/unit/page)</label><input name="bookUnit"></div>
-          <div class="field wide"><label>指派補課內容</label><textarea name="assignedContent" placeholder="例如：1. 帶讀單字句型　2. 補寫 Workbook P.18　3. 補考單字聽寫"></textarea></div>
-          <div class="field">
-            <label>預計補課時長</label>
-            <select name="plannedDuration">
-              <option>15 分鐘</option><option>20 分鐘</option><option>30 分鐘</option>
-              <option>40 分鐘</option><option>60 分鐘</option>
-            </select>
+
+        <div class="form-section">
+          <div class="sec-head">學生資料</div>
+          <div class="grid">
+            <div class="field"><label>學生中文名</label><input name="studentNameCh" required></div>
+            <div class="field"><label>學生英文名</label><input name="studentNameEn"></div>
+            <div class="field"><label>年級</label><input name="grade" placeholder="例如：三年級"></div>
+            <div class="field"><label>英語班級</label><input name="className"></div>
+            <div class="field"><label>英語導師</label><input name="homeroomTeacher"></div>
+            <div class="field"><label>英語教室</label><input name="classroom"></div>
           </div>
         </div>
 
-        <h3 style="margin-top:18px; font-size:14px;">選擇補課時段（顯示各時段剩餘名額，額滿無法選取）</h3>
-        <div id="slotPicker"></div>
-        <input type="hidden" name="slotWeekday">
-        <input type="hidden" name="slotTime">
-        <input type="hidden" name="slotTA">
+        <div class="form-section">
+          <div class="sec-head">缺課資訊</div>
+          <div class="grid">
+            <div class="field"><label>缺課日期</label><input type="date" name="absenceDate" required></div>
+            <div class="field">
+              <label>請假原因</label>
+              <select name="leaveReason">
+                <option>事假</option><option>病假</option><option>公假</option>
+                <option>學校活動</option><option>其他</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>缺課核心課程 <span class="hint">VAA/OAA=書寫朗誦、GAA=文法、PAA=發音</span></label>
+              <select name="coreCourse">
+                <option>VAA/OAA</option><option>GAA</option><option>PAA</option><option>其他</option>
+              </select>
+            </div>
+            <div class="field"><label>課本及單元 <span class="hint">ch / unit / page</span></label><input name="bookUnit"></div>
+          </div>
+        </div>
 
-        <div style="margin-top:16px;">
+        <div class="form-section">
+          <div class="sec-head">補課安排</div>
+          <div class="grid">
+            <div class="field wide">
+              <label>指派補課內容 <span class="hint">助教職責分四型：書寫、朗誦、補考、觀念解答</span></label>
+              <textarea name="assignedContent" placeholder="例如：&#10;1. 帶讀單字句型（朗誦型）&#10;2. 補寫 Workbook P.18（書寫型）&#10;3. 補考 U3 單字聽寫（補考型）"></textarea>
+            </div>
+            <div class="field">
+              <label>預計補課時長</label>
+              <select name="plannedDuration">
+                <option>15 分鐘</option><option>20 分鐘</option><option>30 分鐘</option>
+                <option>40 分鐘</option><option>60 分鐘</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top:var(--s-4);">
+            <label style="display:block; font-size:12px; color:var(--ink-soft); font-weight:500; margin-bottom:var(--s-2);">
+              選擇補課時段 <span style="color:var(--ink-faint); font-weight:400;">（顯示各時段剩餘名額，額滿無法選取）</span>
+            </label>
+            <div id="slotPicker"></div>
+          </div>
+
+          <input type="hidden" name="slotWeekday">
+          <input type="hidden" name="slotTime">
+          <input type="hidden" name="slotTA">
+        </div>
+
+        <div style="margin-top:var(--s-5); display:flex; gap:var(--s-2); align-items:center;">
           <button type="submit" class="btn">送出紀錄</button>
+          <span id="teacherFormHint" style="font-size:12.5px; color:var(--ink-faint);"></span>
         </div>
       </form>
     </div>
 
     <div class="panel">
-      <h2>我登記的補課紀錄</h2>
+      <h2>我登記的補課紀錄 <span class="count" id="teacherCount"></span></h2>
       <div id="teacherRecordList"></div>
     </div>
   </section>
 
-  <!-- ========== 助教 VIEW ========== -->
+  <!-- ================= 助教 ================= -->
   <section class="view" id="view-ta">
+
+    <div class="callout">
+      <b>補課前請先完成</b>：預備補課內容並向老師拿到課本資料 ・ 確認學生補課資訊 ・ 補課當天點名，未到或遲到要打電話給教學老師 ・ 補課後回傳資訊給家長。
+      職責範圍看 <a data-goto="rules">規則說明</a>。
+    </div>
+
     <div class="panel">
-      <h2>待處理的補課（指派給我）</h2>
+      <h2>待處理的補課（指派給我） <span class="count" id="taPendingCount"></span></h2>
       <div id="taPendingList"></div>
     </div>
     <div class="panel">
-      <h2>已完成紀錄</h2>
+      <h2>已完成紀錄 <span class="count" id="taDoneCount"></span></h2>
       <div id="taDoneList"></div>
     </div>
   </section>
 
-  <!-- ========== 主任 VIEW ========== -->
+  <!-- ================= 主任 ================= -->
   <section class="view" id="view-admin">
     <div class="stat-row" id="adminStats"></div>
 
     <div class="panel">
-      <h2>全部補課紀錄</h2>
+      <h2>全部補課紀錄 <span class="count" id="adminCount"></span></h2>
+
+      <div class="filter-bar">
+        <input type="search" id="adminSearch" placeholder="搜尋學生、班級、老師、助教…">
+        <div class="chip-row" id="adminStatusFilter">
+          <button data-status="all" class="active">全部</button>
+          <button data-status="pending">待補課</button>
+          <button data-status="overdue">逾期</button>
+          <button data-status="done">已完成</button>
+        </div>
+        <select id="adminTaFilter"><option value="">所有助教</option></select>
+      </div>
+
       <div class="table-wrap">
         <table class="admin-table" id="adminTable">
           <thead>
@@ -334,19 +561,86 @@
     </div>
 
     <div class="panel">
-      <h2>助教/輔導老師 時段與名額設定</h2>
+      <h2>助教 時段與名額設定</h2>
       <div id="rosterEditor"></div>
-      <form id="rosterAddForm" class="grid" style="margin-top:14px;">
+      <form id="rosterAddForm" class="grid" style="margin-top:var(--s-4);">
         <div class="field"><label>星期</label>
-          <select name="weekday"><option>Mon</option><option>Tue</option><option>Wed</option><option>Thu</option><option>Fri</option></select>
+          <select name="weekday">
+            <option value="Mon">週一</option><option value="Tue">週二</option><option value="Wed">週三</option>
+            <option value="Thu">週四</option><option value="Fri">週五</option>
+          </select>
         </div>
         <div class="field"><label>時段</label>
           <select name="time"><option>1:00-2:00</option><option>3:30-4:00</option><option>6:30-7:00</option></select>
         </div>
-        <div class="field"><label>助教/輔導老師姓名</label><input name="ta" required></div>
+        <div class="field"><label>助教姓名</label><input name="ta" required></div>
         <div class="field"><label>名額</label><input name="quota" type="number" value="4" min="1"></div>
-        <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增/更新時段</button></div>
+        <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增／更新時段</button></div>
       </form>
+    </div>
+  </section>
+
+  <!-- ================= 規則說明 ================= -->
+  <section class="view" id="view-rules">
+
+    <div class="callout">
+      這一頁是補課制度的職責分工。老師和助教在送出／填寫紀錄前，請先確認自己該做的事都完成了。
+    </div>
+
+    <div class="rules-grid">
+
+      <div class="rule-card">
+        <h3>助教可以做的職責</h3>
+
+        <div class="rule-item">
+          <div class="rule-name"><span class="dot"></span>書寫型</div>
+          <div class="rule-desc">
+            Writing Book 練習書寫、課本的內容書寫、Quiz 罰寫訂正
+            <div class="rule-note">功課沒寫的補寫，須於英語教室完成</div>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <div class="rule-name"><span class="dot"></span>朗誦型</div>
+          <div class="rule-desc">
+            念讀單字句型、口說作業、Speaking &amp; Reading 文章（善用音檔）、Phonics Rules
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <div class="rule-name"><span class="dot"></span>補考型</div>
+          <div class="rule-desc">
+            協助將某單元不熟悉的單字句型考過、英語階級考補考
+            <div class="rule-note">不包含平日小考補考</div>
+          </div>
+        </div>
+
+        <div class="rule-item">
+          <div class="rule-name"><span class="dot"></span>觀念解答型</div>
+          <div class="rule-desc">Grammar 觀念講解</div>
+        </div>
+      </div>
+
+      <div class="rule-card">
+        <h3>英語教師須預備</h3>
+        <ol class="rule-list">
+          <li>補課要使用的<strong>課本教材</strong>給助教</li>
+          <li><strong>前一天完成交接</strong>，預留一天給助教預備補課、傳補課資訊給教學部</li>
+          <li>在班提醒學生補課時間、攜帶課本和文具，並和教學部預約好補課時段，請學生準時出現</li>
+          <li><strong>補課追蹤</strong>：查看助教填寫的補課紀錄並簽名</li>
+        </ol>
+      </div>
+
+      <div class="rule-card">
+        <h3>助教預備</h3>
+        <ol class="rule-list">
+          <li>預備補課內容、收集課本及資料（和英語老師合作拿到資訊）</li>
+          <li>學生補課資訊確認、<strong>填寫補課紀錄</strong></li>
+          <li>學生補課<strong>點名</strong>，未到或遲到打電話給教學老師查明原因</li>
+          <li>完成補課後，<strong>回傳補課資訊給家長</strong></li>
+        </ol>
+      </div>
+
     </div>
   </section>
 

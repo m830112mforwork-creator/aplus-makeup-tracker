@@ -50,6 +50,7 @@ let records = [];
 let roster = [];
 let state = { role: "teacher", name: "" };
 let selectedSlot = null; // {weekday, time, ta}
+let adminFilter = { search: "", status: "all", ta: "" };
 
 // ---------------- Firebase 初始化 ----------------
 function isConfigured(){
@@ -233,25 +234,46 @@ function remainingForSlot(weekday, time, ta){
   ).length;
   return slot.quota - used;
 }
+// 同一個星期＋時段可能排了不只一位助教，全部都要列出來
+function slotsAt(weekday, time){
+  return roster.filter(s=>s.weekday===weekday && s.time===time && s.ta);
+}
+function escapeHtml(v){
+  return String(v ?? "").replace(/[&<>"']/g, c =>
+    ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
 
 // ---------------- 角色切換 / 身分列 ----------------
+function switchRole(role){
+  state.role = role;
+  document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b.dataset.role===role));
+  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
+  document.getElementById("view-"+role).classList.add("active");
+  localStorage.setItem("makeup_role", role);
+  window.scrollTo({ top:0, behavior:"smooth" });
+  renderAll();
+}
+
 document.getElementById("roleTabs").addEventListener("click", e=>{
   const btn = e.target.closest("button[data-role]");
-  if(!btn) return;
-  state.role = btn.dataset.role;
-  document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b===btn));
-  document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
-  document.getElementById("view-"+state.role).classList.add("active");
-  localStorage.setItem("makeup_role", state.role);
-  renderAll();
+  if(btn) switchRole(btn.dataset.role);
 });
+
+// 提示條裡的「規則說明」連結
+document.querySelectorAll("[data-goto]").forEach(a=>{
+  a.addEventListener("click", ()=>switchRole(a.dataset.goto));
+});
+
 const nameInput = document.getElementById("myName");
 nameInput.value = localStorage.getItem("makeup_name") || "";
 state.name = nameInput.value;
+let nameTimer = null;
 nameInput.addEventListener("input", ()=>{
   state.name = nameInput.value.trim();
   localStorage.setItem("makeup_name", state.name);
-  renderAll();
+  // 每打一個字就重畫整頁太浪費，等使用者停下來再畫
+  clearTimeout(nameTimer);
+  nameTimer = setTimeout(renderAll, 250);
 });
 (function restoreRole(){
   const saved = localStorage.getItem("makeup_role");
@@ -268,34 +290,50 @@ function renderSlotPicker(){
   const wrap = document.getElementById("slotPicker");
   const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
   const times = [...new Set(roster.map(s=>s.time))].sort();
+
+  if(times.length === 0){
+    wrap.innerHTML = '<div class="empty">主任還沒設定任何補課時段</div>';
+    return;
+  }
+
   let html = '<table class="slot-table"><thead><tr><th></th>';
   weekdays.forEach(w=> html += `<th>${WEEKDAY_LABEL[w]}</th>`);
   html += '</tr></thead><tbody>';
+
   times.forEach(t=>{
-    html += `<tr><th>${t}</th>`;
+    html += `<tr><th>${escapeHtml(t)}</th>`;
     weekdays.forEach(w=>{
-      const slot = roster.find(s=>s.weekday===w && s.time===t);
-      if(!slot || !slot.ta){
+      const slots = slotsAt(w,t);
+      if(slots.length === 0){
         html += `<td><div class="slot-cell unavailable">無</div></td>`;
-      } else {
-        const remain = remainingForSlot(w,t,slot.ta);
-        const isSel = selectedSlot && selectedSlot.weekday===w && selectedSlot.time===t && selectedSlot.ta===slot.ta;
-        const cls = remain<=0 ? "slot-cell full" : (isSel ? "slot-cell selected" : "slot-cell");
-        html += `<td><button type="button" class="${cls}" ${remain<=0?"disabled":""}
-          data-w="${w}" data-t="${t}" data-ta="${slot.ta}">${slot.ta}<small>剩 ${Math.max(remain,0)} 名</small></button></td>`;
+        return;
       }
+      // 一格裡可能有多位助教，每位各一顆按鈕
+      const buttons = slots.map(slot=>{
+        const remain = remainingForSlot(w,t,slot.ta);
+        const isSel = selectedSlot && selectedSlot.weekday===w
+                   && selectedSlot.time===t && selectedSlot.ta===slot.ta;
+        const cls = remain<=0 ? "slot-cell full" : (isSel ? "slot-cell selected" : "slot-cell");
+        return `<button type="button" class="${cls}" ${remain<=0?"disabled":""}
+          data-w="${escapeHtml(w)}" data-t="${escapeHtml(t)}" data-ta="${escapeHtml(slot.ta)}"
+        >${escapeHtml(slot.ta)}<small>剩 ${Math.max(remain,0)} 名</small></button>`;
+      }).join("");
+      html += `<td><div class="slot-multi">${buttons}</div></td>`;
     });
     html += '</tr>';
   });
   html += '</tbody></table>';
   wrap.innerHTML = html;
-  wrap.querySelectorAll("button.slot-cell:not(.unavailable)").forEach(btn=>{
+
+  wrap.querySelectorAll("button.slot-cell").forEach(btn=>{
     btn.addEventListener("click", ()=>{
       selectedSlot = { weekday:btn.dataset.w, time:btn.dataset.t, ta:btn.dataset.ta };
       document.querySelector('[name="slotWeekday"]').value = selectedSlot.weekday;
       document.querySelector('[name="slotTime"]').value = selectedSlot.time;
       document.querySelector('[name="slotTA"]').value = selectedSlot.ta;
       renderSlotPicker();
+      document.getElementById("teacherFormHint").textContent =
+        `已選：${WEEKDAY_LABEL[selectedSlot.weekday]} ${selectedSlot.time}（${selectedSlot.ta}）`;
     });
   });
 }
@@ -321,6 +359,8 @@ document.getElementById("teacherForm").addEventListener("submit", async e=>{
   }
   e.target.reset();
   selectedSlot = null;
+  document.getElementById("teacherFormHint").textContent = "";
+  renderSlotPicker();
   showToast("已送出補課紀錄");
 });
 
@@ -377,7 +417,12 @@ function openModal(title, text, extraHtml=""){
   modalExtra.innerHTML = extraHtml;
   modalBackdrop.classList.add("open");
 }
-document.getElementById("modalClose").addEventListener("click", ()=>modalBackdrop.classList.remove("open"));
+function closeModal(){ modalBackdrop.classList.remove("open"); }
+document.getElementById("modalClose").addEventListener("click", closeModal);
+modalBackdrop.addEventListener("click", e=>{ if(e.target === modalBackdrop) closeModal(); });
+document.addEventListener("keydown", e=>{
+  if(e.key === "Escape" && modalBackdrop.classList.contains("open")) closeModal();
+});
 document.getElementById("modalCopy").addEventListener("click", ()=>{
   navigator.clipboard.writeText(modalText.value).then(()=>showToast("已複製到剪貼簿"));
 });
@@ -428,25 +473,73 @@ function openDeptUpdateModal(r){
 // ---------------- 渲染：老師的紀錄列表 ----------------
 function renderTeacherRecords(){
   const wrap = document.getElementById("teacherRecordList");
+  const badge = document.getElementById("teacherCount");
   const mine = records.filter(r=>r.teacherName===state.name);
-  if(!state.name){ wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到妳登記的紀錄</div>'; return; }
+  badge.textContent = state.name ? `${mine.length} 筆` : "";
+  if(!state.name){ wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到你登記的紀錄</div>'; return; }
   if(mine.length===0){ wrap.innerHTML = '<div class="empty">還沒有登記任何紀錄</div>'; return; }
   wrap.innerHTML = mine.map(r=>recordCardHtml(r, "teacher")).join("");
   bindRecordActions(wrap, mine);
 }
 
 // ---------------- 渲染：助教的待辦 / 已完成 ----------------
+// 重畫會把 DOM 整個換掉，助教打到一半的字會消失。
+// 其他人一存檔 onSnapshot 就會觸發重畫，所以先把畫面上的輸入狀態記下來，畫完再放回去。
+function captureTaFormState(){
+  const snapshot = {};
+  document.querySelectorAll(".ta-form").forEach(form=>{
+    const id = form.id.replace(/^taform-/, "");
+    snapshot[id] = {
+      open:       form.classList.contains("open"),
+      actualDate: form.querySelector(".f-actualDate")?.value,
+      method:     form.querySelector(".f-method")?.value,
+      result:     form.querySelector(".f-result")?.value,
+      hw:         form.querySelector(".f-hw")?.value,
+      note:       form.querySelector(".f-note")?.value,
+    };
+  });
+  return snapshot;
+}
+
+function restoreTaFormState(snapshot){
+  Object.entries(snapshot).forEach(([id, s])=>{
+    const form = document.getElementById("taform-"+id);
+    if(!form) return;
+    if(s.open) form.classList.add("open");
+    const set = (sel, val)=>{
+      const el = form.querySelector(sel);
+      if(el && val !== undefined && val !== null) el.value = val;
+    };
+    set(".f-actualDate", s.actualDate);
+    set(".f-method", s.method);
+    set(".f-result", s.result);
+    set(".f-hw", s.hw);
+    set(".f-note", s.note);
+  });
+}
+
 function renderTaLists(){
   const pendingWrap = document.getElementById("taPendingList");
   const doneWrap = document.getElementById("taDoneList");
+  const pendingBadge = document.getElementById("taPendingCount");
+  const doneBadge = document.getElementById("taDoneCount");
+
   if(!state.name){
-    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與時段設定裡的助教姓名一致）</div>';
+    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與主任在「時段設定」填的助教姓名完全一致）</div>';
     doneWrap.innerHTML = "";
+    pendingBadge.textContent = "";
+    doneBadge.textContent = "";
     return;
   }
+
+  const formState = captureTaFormState();
+
   const mine = records.filter(r=>r.slotTA===state.name);
   const pending = mine.filter(r=>!r.actualDate);
   const done = mine.filter(r=>r.actualDate);
+
+  pendingBadge.textContent = `${pending.length} 筆`;
+  doneBadge.textContent = `${done.length} 筆`;
 
   pendingWrap.innerHTML = pending.length
     ? pending.map(r=>recordCardHtml(r,"ta")).join("")
@@ -457,33 +550,36 @@ function renderTaLists(){
 
   bindRecordActions(pendingWrap, pending);
   bindRecordActions(doneWrap, done);
+  restoreTaFormState(formState);
 }
 
 // ---------------- 卡片 HTML ----------------
 function recordCardHtml(r, mode){
   const status = computeStatus(r);
-  const overdueClass = status==="overdue" ? "overdue" : "";
+  const e = escapeHtml;
+  const kv = (label, value) => `<div class="kv"><b>${label}</b><span>${e(value || "-")}</span></div>`;
   return `
-  <div class="record-card ${overdueClass}" data-id="${r.id}">
+  <div class="record-card ${status}" data-id="${e(r.id)}">
     <div class="rc-head">
       <div>
-        <div class="rc-title">${r.studentNameCh||""} ${r.studentNameEn?("("+r.studentNameEn+")"):""}</div>
-        <div class="rc-meta">${r.absenceDate}｜${r.leaveReason}｜${r.className||""} ${r.homeroomTeacher||""}</div>
+        <div class="rc-title">${e(r.studentNameCh)} ${r.studentNameEn?("("+e(r.studentNameEn)+")"):""}</div>
+        <div class="rc-meta">${e(r.absenceDate)}｜${e(r.leaveReason)}｜${e(r.className)} ${e(r.homeroomTeacher)}</div>
       </div>
       <span class="tag ${status}">${statusLabel(status)}</span>
     </div>
     <div class="rc-body">
-      <div class="kv"><b>缺課核心課程</b>${r.coreCourse||"-"}</div>
-      <div class="kv"><b>課本單元</b>${r.bookUnit||"-"}</div>
-      <div class="kv"><b>指派補課內容</b>${r.assignedContent||"-"}</div>
-      <div class="kv"><b>預計時長</b>${r.plannedDuration||"-"}</div>
-      <div class="kv"><b>時段/負責人</b>${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）</div>
+      ${kv("缺課核心課程", r.coreCourse)}
+      ${kv("課本單元", r.bookUnit)}
+      ${kv("指派補課內容", r.assignedContent)}
+      ${kv("預計時長", r.plannedDuration)}
+      ${kv("時段/負責人", `${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）`)}
       ${r.actualDate ? `
-      <div class="kv"><b>實際補課日期</b>${r.actualDate}</div>
-      <div class="kv"><b>補課方式</b>${r.method||"-"}</div>
-      <div class="kv"><b>驗收成果</b>${r.result||"-"}</div>
-      <div class="kv"><b>作業狀況</b>${r.homeworkStatus||"-"}</div>
-      <div class="kv"><b>家長已通知</b>${r.parentNotified?"是":"否"}</div>` : ``}
+      ${kv("實際補課日期", r.actualDate)}
+      ${kv("補課方式", r.method)}
+      ${kv("驗收成果", r.result)}
+      ${kv("作業狀況", r.homeworkStatus)}
+      ${kv("助教備註", r.taNote)}
+      ${kv("家長已通知", r.parentNotified ? "是" : "否")}` : ``}
     </div>
 
     <div class="rc-actions">
@@ -547,51 +643,117 @@ function bindRecordActions(container, list){
 }
 
 // ---------------- 渲染：主任儀表板 ----------------
+function matchesAdminFilter(r){
+  if(adminFilter.status !== "all" && computeStatus(r) !== adminFilter.status) return false;
+  if(adminFilter.ta && r.slotTA !== adminFilter.ta) return false;
+  const q = adminFilter.search.trim().toLowerCase();
+  if(!q) return true;
+  return [r.studentNameCh, r.studentNameEn, r.className, r.grade,
+          r.homeroomTeacher, r.teacherName, r.slotTA, r.leaveReason,
+          r.bookUnit, r.assignedContent]
+    .some(v => String(v||"").toLowerCase().includes(q));
+}
+
 function renderAdmin(){
+  const e = escapeHtml;
   const pending = records.filter(r=>computeStatus(r)==="pending").length;
   const overdue = records.filter(r=>computeStatus(r)==="overdue").length;
   const done = records.filter(r=>computeStatus(r)==="done").length;
   document.getElementById("adminStats").innerHTML = `
     <div class="stat"><div class="num">${records.length}</div><div class="label">總紀錄數</div></div>
-    <div class="stat"><div class="num">${pending}</div><div class="label">待補課</div></div>
+    <div class="stat pending"><div class="num">${pending}</div><div class="label">待補課</div></div>
     <div class="stat overdue"><div class="num">${overdue}</div><div class="label">逾期未補</div></div>
     <div class="stat done"><div class="num">${done}</div><div class="label">已完成</div></div>
   `;
 
+  // 助教篩選下拉：從時段設定和既有紀錄收集所有助教姓名
+  const taNames = [...new Set([
+    ...roster.filter(s=>s.ta).map(s=>s.ta),
+    ...records.map(r=>r.slotTA).filter(Boolean),
+  ])].sort();
+  const taSelect = document.getElementById("adminTaFilter");
+  if(taSelect.dataset.names !== taNames.join("|")){
+    taSelect.dataset.names = taNames.join("|");
+    taSelect.innerHTML = `<option value="">所有助教</option>` +
+      taNames.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join("");
+    taSelect.value = adminFilter.ta;
+  }
+
+  const shown = records.filter(matchesAdminFilter);
+  const isFiltered = adminFilter.search || adminFilter.status !== "all" || adminFilter.ta;
+  document.getElementById("adminCount").textContent =
+    isFiltered ? `${shown.length} / ${records.length} 筆` : `${records.length} 筆`;
+
   const tbody = document.getElementById("adminTableBody");
-  if(records.length===0){
+  if(records.length === 0){
     tbody.innerHTML = `<tr><td colspan="11" class="empty">目前沒有紀錄</td></tr>`;
+  } else if(shown.length === 0){
+    tbody.innerHTML = `<tr><td colspan="11" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
   } else {
-    tbody.innerHTML = records.map(r=>{
+    // data-label 是給手機用的：窄螢幕時表格會變成一筆一張卡，欄位名靠它顯示
+    tbody.innerHTML = shown.map(r=>{
       const status = computeStatus(r);
+      const td = (label, html) => `<td data-label="${label}">${html}</td>`;
       return `<tr class="${status}">
-        <td><span class="tag ${status}">${statusLabel(status)}</span></td>
-        <td>${r.absenceDate}</td>
-        <td>${r.studentNameCh||""}${r.studentNameEn?(" / "+r.studentNameEn):""}</td>
-        <td>${r.className||""}${r.homeroomTeacher?("／"+r.homeroomTeacher):""}</td>
-        <td>${r.leaveReason||""}</td>
-        <td>${r.assignedContent||""}</td>
-        <td>${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}</td>
-        <td>${r.slotTA||""}</td>
-        <td>${r.actualDate||"-"}</td>
-        <td>${r.result||"-"}</td>
-        <td>${r.parentNotified?"是":"否"}</td>
+        ${td("狀態", `<span class="tag ${status}">${statusLabel(status)}</span>`)}
+        ${td("缺課日期", e(r.absenceDate))}
+        ${td("學生", e(r.studentNameCh) + (r.studentNameEn ? " / "+e(r.studentNameEn) : ""))}
+        ${td("班級/導師", e(r.className) + (r.homeroomTeacher ? "／"+e(r.homeroomTeacher) : ""))}
+        ${td("原因", e(r.leaveReason))}
+        ${td("指派內容", e(r.assignedContent))}
+        ${td("時段", e(`${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}`))}
+        ${td("助教", e(r.slotTA))}
+        ${td("實際補課", e(r.actualDate || "-"))}
+        ${td("驗收", e(r.result || "-"))}
+        ${td("家長已通知", r.parentNotified ? "是" : "否")}
       </tr>`;
     }).join("");
   }
 
-  // roster editor
+  // 時段設定總表
   const rw = document.getElementById("rosterEditor");
-  if(roster.length===0){ rw.innerHTML = '<div class="empty">尚未設定任何時段</div>'; }
+  const slots = roster.filter(s=>s.ta);
+  if(slots.length === 0){ rw.innerHTML = '<div class="empty">尚未設定任何時段</div>'; }
   else {
-    rw.innerHTML = `<div class="table-wrap"><table class="admin-table">
-      <thead><tr><th>星期</th><th>時段</th><th>助教/輔導老師</th><th>名額</th><th>剩餘</th></tr></thead>
-      <tbody>${roster.filter(s=>s.ta).map(s=>`
-        <tr><td>${WEEKDAY_LABEL[s.weekday]||s.weekday}</td><td>${s.time}</td><td>${s.ta}</td>
-        <td>${s.quota}</td><td>${remainingForSlot(s.weekday,s.time,s.ta)}</td></tr>`).join("")}
+    const order = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4 };
+    const sorted = [...slots].sort((a,b)=>
+      (order[a.weekday]??9) - (order[b.weekday]??9) || String(a.time).localeCompare(String(b.time))
+    );
+    rw.innerHTML = `<div class="table-wrap"><table class="admin-table roster-table">
+      <thead><tr><th>星期</th><th>時段</th><th>助教</th><th>名額</th><th>剩餘</th></tr></thead>
+      <tbody>${sorted.map(s=>{
+        const remain = remainingForSlot(s.weekday, s.time, s.ta);
+        return `<tr>
+          <td data-label="星期">${e(WEEKDAY_LABEL[s.weekday] || s.weekday)}</td>
+          <td data-label="時段">${e(s.time)}</td>
+          <td data-label="助教">${e(s.ta)}</td>
+          <td data-label="名額">${e(s.quota)}</td>
+          <td data-label="剩餘">${remain <= 0 ? '<span class="tag overdue">額滿</span>' : e(remain)}</td>
+        </tr>`;
+      }).join("")}
       </tbody></table></div>`;
   }
 }
+
+// ---------------- 主任：篩選列 ----------------
+let searchTimer = null;
+document.getElementById("adminSearch").addEventListener("input", e=>{
+  clearTimeout(searchTimer);
+  const v = e.target.value;
+  searchTimer = setTimeout(()=>{ adminFilter.search = v; renderAdmin(); }, 200);
+});
+document.getElementById("adminStatusFilter").addEventListener("click", e=>{
+  const btn = e.target.closest("button[data-status]");
+  if(!btn) return;
+  adminFilter.status = btn.dataset.status;
+  document.querySelectorAll("#adminStatusFilter button")
+    .forEach(b=>b.classList.toggle("active", b===btn));
+  renderAdmin();
+});
+document.getElementById("adminTaFilter").addEventListener("change", e=>{
+  adminFilter.ta = e.target.value;
+  renderAdmin();
+});
 
 // ---------------- 統一渲染入口 ----------------
 function renderAll(){
