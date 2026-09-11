@@ -401,7 +401,7 @@ document.getElementById("teacherForm").addEventListener("submit", async e=>{
   const data = Object.fromEntries(fd.entries());
   data.teacherName = state.name;
   data.actualDate = "";
-  data.method = ""; data.result = ""; data.homeworkStatus = ""; data.taNote = "";
+  data.result = ""; data.homeworkStatus = ""; data.taNote = "";
   data.parentNotified = false;
   data.createdAt = Date.now();
 
@@ -450,7 +450,7 @@ async function saveRecordFields(id, fields){
 // ---------------- 訊息範本 ----------------
 function buildParentMessage(r){
   const name = r.studentNameCh || r.studentNameEn || "";
-  return `Hello ${name}'s parents\n${name} 於 ${r.absenceDate} 請假（原因：${r.leaveReason}），已於 ${r.actualDate} 完成補課囉！\n\n補課內容：${r.assignedContent}\n補課方式：${r.method}\n驗收成果：${r.result}\n作業狀況：${r.homeworkStatus}\n\n如有任何問題歡迎與我們聯繫，謝謝您的配合！`;
+  return `Hello ${name}'s parents\n${name} 於 ${r.absenceDate} 請假（原因：${r.leaveReason}），已於 ${r.actualDate} 完成補課囉！\n\n補課內容：${r.assignedContent}\n驗收成果：${r.result}\n作業狀況：${r.homeworkStatus}\n\n如有任何問題歡迎與我們聯繫，謝謝您的配合！`;
 }
 function buildDeptRequestMessage(r){
   const bookLine = [r.book, r.unit].filter(Boolean).join(" ");
@@ -580,7 +580,6 @@ function captureTaFormState(){
     snapshot[id] = {
       open:       form.classList.contains("open"),
       actualDate: form.querySelector(".f-actualDate")?.value,
-      method:     form.querySelector(".f-method")?.value,
       result:     form.querySelector(".f-result")?.value,
       hw:         form.querySelector(".f-hw")?.value,
       note:       form.querySelector(".f-note")?.value,
@@ -599,7 +598,6 @@ function restoreTaFormState(snapshot){
       if(el && val !== undefined && val !== null) el.value = val;
     };
     set(".f-actualDate", s.actualDate);
-    set(".f-method", s.method);
     set(".f-result", s.result);
     set(".f-hw", s.hw);
     set(".f-note", s.note);
@@ -676,7 +674,6 @@ function recordCardHtml(r, mode){
       ${kv("時段/負責人", `${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）`)}
       ${r.actualDate ? `
       ${kv("實際補課日期", r.actualDate)}
-      ${kv("補課方式", r.method)}
       ${kv("驗收成果", r.result)}
       ${kv("作業狀況", r.homeworkStatus)}
       ${kv("助教備註", r.taNote)}
@@ -701,12 +698,6 @@ function recordCardHtml(r, mode){
     <div class="ta-form" id="taform-${r.id}">
       <div class="grid">
         <div class="field"><label>實際補課日期</label><input type="date" class="f-actualDate" value="${todayStr()}"></div>
-        <div class="field"><label>補課方式</label>
-          <select class="f-method">
-            <option>1對1實體補課</option><option>錄影/音檔自學+TA驗收</option>
-            <option>線上補課 (Zoom)</option><option>課前/課後快跑驗收</option>
-          </select>
-        </div>
         <div class="field wide"><label>驗收成果</label><input class="f-result" placeholder="例如：單字補考 90分 (已過關)"></div>
         <div class="field">
           <label>作業補交狀況</label>
@@ -751,7 +742,6 @@ function bindRecordActions(container, list){
       const form = document.getElementById("taform-"+r.id);
       const fields = {
         actualDate: form.querySelector(".f-actualDate").value,
-        method: form.querySelector(".f-method").value,
         result: form.querySelector(".f-result").value,
         homeworkStatus: form.querySelector(".f-hw").value,
         taNote: form.querySelector(".f-note").value,
