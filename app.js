@@ -23,9 +23,21 @@ const FIREBASE_CONFIG = {
   appId: "YOUR_APP_ID"
 };
 
+// ------------------------------------------------------------
+// 要不要在進系統前先問密碼？
+//
+//   false = 不問，打開網址就能用（目前設定）
+//           Firestore 規則請貼 firestore.rules（完全開放）
+//
+//   true  = 要問部門共用密碼
+//           改成 true 之前請先做完 README「附錄：之後想開密碼保護時」，
+//           並把 firestore.with-password.rules 貼到 Firebase 規則
+// ------------------------------------------------------------
+const REQUIRE_PASSWORD = false;
+
 // 全部門共用的那一組帳號。使用者只需要輸入密碼，帳號由系統自動帶入。
 // 這個 email 不需要是真的信箱，但必須跟你在 Firebase Authentication
-// 後台建立的那一組完全一致（見 README 第三步）。
+// 後台建立的那一組完全一致。只有 REQUIRE_PASSWORD = true 時才會用到。
 const SHARED_ACCOUNT_EMAIL = "staff@aplus-makeup.local";
 
 const WEEKDAY_LABEL = { Mon:"週一", Tue:"週二", Wed:"週三", Thu:"週四", Fri:"週五" };
@@ -57,6 +69,13 @@ function initFirebase(){
   }
   const app = initializeApp(FIREBASE_CONFIG);
   db = getFirestore(app);
+
+  if(!REQUIRE_PASSWORD){
+    showApp();            // 不顯示登入畫面，也不顯示登出按鈕
+    startDataListeners();
+    return;
+  }
+
   auth = getAuth(app);
 
   // 先蓋上登入畫面，避免 Firebase 還在確認登入狀態時閃過系統內容
@@ -120,7 +139,7 @@ function showLockScreen(){
 
 function showApp(){
   lockScreen.hidden = true;
-  signOutBtn.hidden = false;
+  signOutBtn.hidden = !REQUIRE_PASSWORD;   // 沒有密碼保護時，登出按鈕沒有意義
 }
 
 lockForm.addEventListener("submit", async e => {

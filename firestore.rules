@@ -2,12 +2,22 @@ rules_version = '2';
 
 // ============================================================
 // 補課派工系統 Firestore 安全性規則
+//           ★ 目前使用中的版本：不需要密碼 ★
 // ------------------------------------------------------------
 // 貼法：Firebase Console → Firestore Database → 規則 → 整段貼上 → 發布
 //
-// 規則內容：沒有登入（= 沒有輸入正確的部門共用密碼）的人，
-// 一律不能讀也不能寫。這才是真正在保護資料的地方；
-// 網頁上的密碼畫面只是入口，擋不住繞過網頁直接連資料庫的人。
+// ⚠️ 這組規則是「完全開放」的：任何知道網址的人都能讀寫所有資料，
+//    包含學生姓名、請假原因、補課紀錄。這是你選擇先不設密碼的結果，
+//    不是設定失誤。
+//
+//    請不要把網址貼在公開的地方（部落格、公開社群、對外文件）。
+//
+// 之後想加上密碼保護時：把 firestore.with-password.rules 的內容
+// 貼上來取代這一份，並把 app.js 的 REQUIRE_PASSWORD 改成 true。
+//
+// 註：這裡刻意「明確寫出開放規則」，而不是用 Firebase 的「測試模式」。
+//     測試模式 30 天後會自動失效、讓所有讀寫被拒絕，系統會整個打不開；
+//     這份規則不會過期。
 // ============================================================
 
 service cloud.firestore {
@@ -15,12 +25,12 @@ service cloud.firestore {
 
     // 補課紀錄
     match /records/{recordId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     // 助教時段與名額設定
     match /roster/{slotId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if true;
     }
 
     // 其他任何路徑一律拒絕
