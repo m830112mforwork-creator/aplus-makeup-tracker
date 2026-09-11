@@ -1,17 +1,18 @@
 // ============================================================
 // 國小英語 補課派工與進度追蹤系統
 // ------------------------------------------------------------
-// 設定方式：
-// 1. 到 https://console.firebase.google.com 開一個新專案
-// 2. 專案設定 → 新增網頁應用程式 → 複製 firebaseConfig
-// 3. 貼到下面 FIREBASE_CONFIG 裡
-// 4. 到 Firestore Database → 建立資料庫（測試模式即可先上線用）
+// 設定方式：請看 README.md「第一步」，照著做完後把 firebaseConfig 貼到
+// 下面的 FIREBASE_CONFIG，並依 README「第三步」建立共用帳號、貼上 Firestore 規則。
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, updateDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp, setDoc, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  setPersistence, browserLocalPersistence
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const FIREBASE_CONFIG = {
   apiKey: "YOUR_API_KEY",
@@ -22,10 +23,17 @@ const FIREBASE_CONFIG = {
   appId: "YOUR_APP_ID"
 };
 
+// 全部門共用的那一組帳號。使用者只需要輸入密碼，帳號由系統自動帶入。
+// 這個 email 不需要是真的信箱，但必須跟你在 Firebase Authentication
+// 後台建立的那一組完全一致（見 README 第三步）。
+const SHARED_ACCOUNT_EMAIL = "staff@aplus-makeup.local";
+
 const WEEKDAY_LABEL = { Mon:"週一", Tue:"週二", Wed:"週三", Thu:"週四", Fri:"週五" };
 const OVERDUE_DAYS = 3; // 缺課日期超過幾天沒補課 = 逾期，主任儀表板會標紅
 
 let db = null;
+let auth = null;
+let unsubscribers = [];   // Firestore 監聽器，登出時要一起收掉
 let records = [];
 let roster = [];
 let state = { role: "teacher", name: "" };
@@ -41,7 +49,7 @@ function initFirebase(){
   const connStatus = document.getElementById("connStatus");
   if(!isConfigured()){
     banner.style.display = "block";
-    banner.innerHTML = "⚠️ 尚未設定 Firebase：請在 app.js 最上方的 FIREBASE_CONFIG 填入妳的新 Firebase 專案設定值，系統才能真正儲存資料。目前是示範狀態，資料不會被保存。";
+    banner.innerHTML = "⚠️ 尚未設定 Firebase：請在 app.js 最上方的 FIREBASE_CONFIG 填入妳的新 Firebase 專案設定值，系統才能真正儲存資料。目前是示範狀態，資料不會被保存，也不會要求密碼。";
     connStatus.textContent = "尚未連線 Firebase（示範模式）";
     seedLocalDemoData();
     renderAll();
@@ -49,19 +57,101 @@ function initFirebase(){
   }
   const app = initializeApp(FIREBASE_CONFIG);
   db = getFirestore(app);
+  auth = getAuth(app);
+
+  // 先蓋上登入畫面，避免 Firebase 還在確認登入狀態時閃過系統內容
+  document.getElementById("lockScreen").hidden = false;
+  document.getElementById("connStatus").textContent = "確認登入狀態…";
+
+  // 登入狀態記在這台裝置上，關掉分頁再打開不用重新輸入密碼
+  setPersistence(auth, browserLocalPersistence).catch(()=>{});
+
+  onAuthStateChanged(auth, user => {
+    if(user){ showApp(); startDataListeners(); }
+    else { stopDataListeners(); showLockScreen(); }
+  });
+}
+
+function startDataListeners(){
+  const connStatus = document.getElementById("connStatus");
+  if(unsubscribers.length) return;   // 已經在監聽了，不要重複掛
   connStatus.textContent = "已連線";
 
-  onSnapshot(query(collection(db,"records"), orderBy("absenceDate","desc")), snap => {
-    records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    renderAll();
-  }, err => { connStatus.textContent = "連線錯誤：" + err.message; });
+  unsubscribers.push(
+    onSnapshot(query(collection(db,"records"), orderBy("absenceDate","desc")), snap => {
+      records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      renderAll();
+    }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
+  );
 
-  onSnapshot(collection(db,"roster"), async snap => {
-    roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
-    if(roster.length === 0){ await seedDefaultRoster(); }
-    renderAll();
-  }, err => { connStatus.textContent = "連線錯誤：" + err.message; });
+  unsubscribers.push(
+    onSnapshot(collection(db,"roster"), async snap => {
+      roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      if(roster.length === 0){ await seedDefaultRoster(); }
+      renderAll();
+    }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
+  );
 }
+
+function stopDataListeners(){
+  unsubscribers.forEach(fn => fn());
+  unsubscribers = [];
+  records = [];
+  roster = [];
+  renderAll();
+}
+
+// ---------------- 登入畫面 ----------------
+const lockScreen = document.getElementById("lockScreen");
+const lockForm = document.getElementById("lockForm");
+const lockPassword = document.getElementById("lockPassword");
+const lockSubmit = document.getElementById("lockSubmit");
+const lockError = document.getElementById("lockError");
+const signOutBtn = document.getElementById("signOutBtn");
+
+function showLockScreen(){
+  lockScreen.hidden = false;
+  signOutBtn.hidden = true;
+  lockPassword.value = "";
+  lockError.textContent = "";
+  document.getElementById("connStatus").textContent = "請先輸入密碼";
+  lockPassword.focus();
+}
+
+function showApp(){
+  lockScreen.hidden = true;
+  signOutBtn.hidden = false;
+}
+
+lockForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  const pw = lockPassword.value;
+  if(!pw) return;
+  lockSubmit.disabled = true;
+  lockError.textContent = "";
+  try{
+    await signInWithEmailAndPassword(auth, SHARED_ACCOUNT_EMAIL, pw);
+    // 成功後 onAuthStateChanged 會自動關掉這個畫面
+  }catch(err){
+    const code = err.code || "";
+    if(code === "auth/invalid-credential" || code === "auth/wrong-password" || code === "auth/user-not-found"){
+      lockError.textContent = "密碼不正確，請再試一次。";
+    } else if(code === "auth/too-many-requests"){
+      lockError.textContent = "錯誤次數太多，已被暫時鎖住，請等幾分鐘再試。";
+    } else if(code === "auth/network-request-failed"){
+      lockError.textContent = "連不上網路，請檢查網路連線。";
+    } else {
+      lockError.textContent = "登入失敗：" + (err.message || code);
+    }
+    lockPassword.select();
+  }finally{
+    lockSubmit.disabled = false;
+  }
+});
+
+signOutBtn.addEventListener("click", async () => {
+  if(auth) await signOut(auth);
+});
 
 async function seedDefaultRoster(){
   // 對應原本 Excel「補課時段及師資」表的預設值

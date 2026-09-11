@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// ============================================================
+// 補課派工系統 Firestore 安全性規則
+// ------------------------------------------------------------
+// 貼法：Firebase Console → Firestore Database → 規則 → 整段貼上 → 發布
+//
+// 規則內容：沒有登入（= 沒有輸入正確的部門共用密碼）的人，
+// 一律不能讀也不能寫。這才是真正在保護資料的地方；
+// 網頁上的密碼畫面只是入口，擋不住繞過網頁直接連資料庫的人。
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 補課紀錄
+    match /records/{recordId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 助教時段與名額設定
+    match /roster/{slotId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // 其他任何路徑一律拒絕
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

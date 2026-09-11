@@ -183,12 +183,49 @@
     opacity:0; pointer-events:none; transition:opacity .25s; z-index:60;
   }
   .toast.show{opacity:1;}
+
+  /* ---------- 登入畫面 ---------- */
+  .lock-screen{
+    position:fixed; inset:0; z-index:80; background:var(--paper);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .lock-screen[hidden]{display:none;}
+  .lock-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:30px 28px; width:100%; max-width:360px; text-align:center;
+  }
+  .lock-card .lock-title{font-size:17px; font-weight:700; margin-bottom:4px;}
+  .lock-card .lock-sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; line-height:1.55;}
+  .lock-card input{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+    background:#fff; color:var(--ink); text-align:center; letter-spacing:.08em;
+  }
+  .lock-card .btn{width:100%; justify-content:center; margin-top:12px;}
+  .lock-error{
+    color:var(--warn); font-size:12.5px; margin-top:10px; min-height:18px;
+  }
+  header .btn-signout{
+    border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.12);
+    color:#fff; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:600;
+  }
+
   @media (max-width:640px){
     table.admin-table th{position:static;}
   }
 </style>
 </head>
 <body>
+
+<!-- ========== 登入畫面（通過 Firebase Auth 驗證，不是只有前端擋） ========== -->
+<div class="lock-screen" id="lockScreen" hidden>
+  <form class="lock-card" id="lockForm">
+    <div class="lock-title">國小英語 補課派工系統</div>
+    <div class="lock-sub">這裡有學生個資，請輸入部門共用密碼</div>
+    <input type="password" id="lockPassword" placeholder="通關密碼" autocomplete="current-password" required>
+    <button type="submit" class="btn" id="lockSubmit">進入系統</button>
+    <div class="lock-error" id="lockError"></div>
+  </form>
+</div>
 
 <header>
   <div class="brand">
@@ -202,6 +239,7 @@
       <button data-role="admin">主任</button>
     </div>
     <input id="myName" placeholder="輸入你的姓名" />
+    <button type="button" class="btn-signout" id="signOutBtn" hidden>登出</button>
   </div>
 </header>
 
