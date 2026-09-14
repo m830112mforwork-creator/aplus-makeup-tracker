@@ -192,7 +192,7 @@
   .btn.danger:hover{background:var(--warn-soft); border-color:var(--warn);}
 
   /* 時段選擇 */
-  #slotPicker{overflow-x:auto;}
+  .slot-scroll{overflow-x:auto;}
   .slot-table{width:100%; border-collapse:separate; border-spacing:4px; font-size:13px;}
   .slot-table th{
     background:var(--primary-soft); color:var(--primary); font-weight:700;
@@ -219,6 +219,17 @@
   }
   .slot-cell.selected .slot-note{color:#fff;}
   .slot-multi{display:flex; flex-direction:column; gap:4px;}
+  .week-nav{display:flex; align-items:center; justify-content:space-between; gap:var(--s-2); margin-bottom:var(--s-2);}
+  .week-nav .week-label{font-size:13px; font-weight:700; color:var(--primary); text-align:center;}
+  .week-nav button{
+    border:1px solid var(--line); background:#fff; color:var(--ink-soft);
+    border-radius:var(--r-sm); padding:6px 12px; font-size:12.5px; white-space:nowrap;
+  }
+  .week-nav button:hover:not(:disabled){border-color:var(--primary); color:var(--primary);}
+  .week-nav button:disabled{opacity:.4; cursor:not-allowed;}
+  .slot-table th small{display:block; font-weight:500; font-size:11px; opacity:.8;}
+  .slot-table th.past{opacity:.45;}
+  .slot-table th.today{background:var(--primary); color:#fff;}
 
   /* 狀態標籤 */
   .tag{
@@ -464,6 +475,7 @@
     box-shadow:0 6px 20px rgba(0,0,0,.2);
   }
   .toast.show{opacity:1;}
+  .toast.error{background:var(--warn); max-width:min(92vw, 520px); text-align:center; line-height:1.55;}
 
   /* ============ 手機 ============ */
   @media (max-width:860px){
@@ -654,11 +666,12 @@
 
           <div style="margin-top:var(--s-4);">
             <label style="display:block; font-size:12px; color:var(--ink-soft); font-weight:500; margin-bottom:var(--s-2);">
-              選擇補課時段 <span style="color:var(--ink-faint); font-weight:400;">（顯示各時段剩餘名額，額滿無法選取）</span>
+              選擇補課日期與時段 <span style="color:var(--ink-faint); font-weight:400;">（名額按當天計算，額滿無法選取；可切換週次）</span>
             </label>
             <div id="slotPicker"></div>
           </div>
 
+          <input type="hidden" name="slotDate">
           <input type="hidden" name="slotWeekday">
           <input type="hidden" name="slotTime">
           <input type="hidden" name="slotTA">
