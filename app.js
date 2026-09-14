@@ -139,10 +139,10 @@ function startDataListeners(){
   );
 
   unsubscribers.push(
-    onSnapshot(collection(db,"roster"), async snap => {
+    // 時段表一開始是空的，由管理職照實際排班輸入（不自動建立預設時段）
+    onSnapshot(collection(db,"roster"), snap => {
       roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       loaded.roster = true;
-      if(roster.length === 0){ await writeSafely(seedDefaultRoster); }
       renderAll();
     }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
   );
@@ -207,32 +207,6 @@ lockForm.addEventListener("submit", async e => {
 signOutBtn.addEventListener("click", async () => {
   if(auth) await signOut(auth);
 });
-
-async function seedDefaultRoster(){
-  // 對應原本 Excel「補課時段及師資」表的預設值
-  const defaults = [
-    { weekday:"Mon", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Wed", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Thu", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Fri", time:"1:00-2:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Mon", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Wed", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Thu", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Fri", time:"3:30-4:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Mon", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Tue", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Wed", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Thu", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
-    { weekday:"Fri", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
-  ];
-  // 用固定的文件 id：兩台電腦同時第一次開，也不會各自塞一份變成重複的時段
-  for(const d of defaults){
-    await setDoc(doc(db,"roster",`${d.weekday}_${d.time}_${d.ta}`), d);
-  }
-  // 記號：預設時段已經放過了。管理職之後把時段全部刪光，也不會又自動長回來。
-  // 沒有 ta 欄位，所有畫時段的地方都會略過它。
-  await setDoc(doc(db,"roster","_seeded"), { seeded:true, ta:null });
-}
 
 // 示範模式（未設定 Firebase 時）用記憶體假資料，方便妳先看介面
 function seedLocalDemoData(){
@@ -553,7 +527,7 @@ function renderSlotGrid(wrap, opts){
   const times = [...new Set(roster.filter(s=>s.ta).map(s=>s.time))].sort();
 
   if(times.length === 0){
-    wrap.innerHTML = '<div class="empty">管理職還沒設定任何補課時段</div>';
+    wrap.innerHTML = '<div class="empty">還沒有任何補課時段。請管理職先到「管理職」頁最下方的「助教時段與名額設定」新增。</div>';
     return;
   }
 
