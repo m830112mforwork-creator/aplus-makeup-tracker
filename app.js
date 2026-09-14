@@ -43,7 +43,6 @@ const REQUIRE_PASSWORD = false;
 const SHARED_ACCOUNT_EMAIL = "staff@aplus-makeup.local";
 
 const WEEKDAY_LABEL = { Mon:"週一", Tue:"週二", Wed:"週三", Thu:"週四", Fri:"週五" };
-const OVERDUE_DAYS = 3; // 缺課日期超過幾天沒補課 = 逾期，管理職儀表板會標紅
 
 let db = null;
 let auth = null;
@@ -227,10 +226,6 @@ function parseDate(str){ const [y, m, d] = String(str).split("-").map(Number); r
 function isDateStr(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v || ""); }
 function addDays(str, n){ const dt = parseDate(str); dt.setDate(dt.getDate() + n); return toDateStr(dt); }
 function todayStr(){ return toDateStr(new Date()); }
-function daysSince(dateStr){
-  if(!dateStr) return 0;
-  return Math.round((parseDate(todayStr()) - parseDate(dateStr)) / 86400000);
-}
 const WEEKDAY_KEYS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
 const WEEKDAY_SHORT = { Mon:"一", Tue:"二", Wed:"三", Thu:"四", Fri:"五", Sat:"六", Sun:"日" };
 function weekdayOf(dayKey){ return isDateStr(dayKey) ? WEEKDAY_KEYS[parseDate(dayKey).getDay()] : dayKey; }
@@ -245,7 +240,9 @@ function computeStatus(r){
   if(r.actualDate) return r.teacherVerified ? "done" : "toVerify";
   // 助教點名記了「未到」，而且之後老師還沒改期 → 要老師處理
   if(r.lastNoShow && !(r.lastRescheduled && r.lastRescheduled.at > r.lastNoShow.at)) return "noShow";
-  if(daysSince(r.absenceDate) > OVERDUE_DAYS) return "overdue";
+  // 逾期：排定的補課日期已經過了（隔天起），助教還沒填這次的到課紀錄。
+  // 補課當天還沒結束不算；助教記了「未到」會在上一行變成「未到待改期」，也不算逾期。
+  if(r.slotDate && r.slotDate < todayStr()) return "overdue";
   return "pending";
 }
 function statusLabel(s){
