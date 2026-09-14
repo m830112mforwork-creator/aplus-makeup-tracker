@@ -651,11 +651,10 @@ function buildDeptUpdateMessage(r, statusChoice, newSlot, origSlot = slotLabel(r
     `${r.studentNameCh}同學（${r.teacherName}英語導師）補課狀況更新：`,
     ``,
     `原訂時段：${origSlot}`,
-    `狀態：${box("已完成")}已完成 ${box("改期")}改期 ${box("取消")}取消`,
+    `狀態：${box("改期")}改期 ${box("取消")}取消`,
     `（若改期）新時段：${statusChoice==="改期" ? (newSlot || "___________") : "___________"}`,
     ``,
-    // 已完成就沒有「下次補課時間」可言，改成道謝
-    statusChoice === "已完成" ? `謝謝老師` : `英語老師會再額外告知學生下次補課時間`,
+    `請協助一同提醒學生，謝謝！`,
   ].join("\n");
 }
 
@@ -701,13 +700,13 @@ function openDeptRequestModal(r){
 }
 // preset：改期或取消存檔後直接帶進來，把選項和新時段先填好
 //   { choice:"改期"|"取消", origSlot:"週一 1:00-2:00", newSlot:"週三 3:30-4:00" }
+// 異動通知只用在改期或取消，補完課不用另外通知
 function openDeptUpdateModal(r, preset = {}){
-  let statusChoice = preset.choice || "已完成";
+  let statusChoice = preset.choice || "改期";
   const origSlot = preset.origSlot || slotLabel(r.slotWeekday, r.slotTime);
   const checked = v => statusChoice === v ? "checked" : "";
   const extra = `
     <div class="status-radio">
-      <label><input type="radio" name="deptStatus" value="已完成" ${checked("已完成")}> 已完成</label>
       <label><input type="radio" name="deptStatus" value="改期" ${checked("改期")}> 改期</label>
       <label><input type="radio" name="deptStatus" value="取消" ${checked("取消")}> 取消</label>
     </div>
