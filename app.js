@@ -14,13 +14,15 @@ import {
   setPersistence, browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
+// Firebase 專案：makeupclass（網頁設定值本來就會出現在網頁原始碼裡，不是密碼）
 const FIREBASE_CONFIG = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyBgud6AEG61Tj3FMukDckme7d7Mx9Z9TEM",
+  authDomain: "makeupclass-39f6b.firebaseapp.com",
+  projectId: "makeupclass-39f6b",
+  storageBucket: "makeupclass-39f6b.firebasestorage.app",
+  messagingSenderId: "737072892980",
+  appId: "1:737072892980:web:b87951f3ba78f5122bce61",
+  measurementId: "G-Y5FW7C1VG5"
 };
 
 // ------------------------------------------------------------
