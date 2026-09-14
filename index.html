@@ -35,6 +35,8 @@
     font-family:"Noto Sans TC","Inter",system-ui,sans-serif;
   }
   *{box-sizing:border-box;}
+  /* .btn、.name-add 這類元件自己設了 display，會蓋掉瀏覽器預設的 hidden，這裡統一壓回去 */
+  [hidden]{display:none !important;}
   body{
     margin:0; background:var(--paper); color:var(--ink);
     font-size:15px; line-height:1.6;
@@ -83,15 +85,26 @@
     font-size:11.5px; font-weight:500; color:rgba(255,255,255,.8);
     white-space:nowrap; letter-spacing:.03em;
   }
-  header input#myName{
+  header #myName{
     background:#fff; color:var(--primary); font-weight:700; font-size:14.5px;
-    border:2px solid #fff; padding:8px 14px; border-radius:var(--r-sm);
-    width:158px; transition:background .2s, border-color .2s, color .2s;
+    border:2px solid #fff; padding:8px 10px; border-radius:var(--r-sm);
+    width:170px; transition:background .2s, border-color .2s, color .2s; cursor:pointer;
   }
-  header input#myName::placeholder{color:#A49CC0; font-weight:400; font-size:13px;}
-  header input#myName:focus{outline:3px solid rgba(255,255,255,.45); outline-offset:1px;}
+  header #myName option{color:var(--ink); font-weight:400;}
+  header #myName:focus{outline:3px solid rgba(255,255,255,.45); outline-offset:1px;}
+  .name-add{display:flex; align-items:center; gap:4px;}
+  .name-add[hidden]{display:none;}
+  .name-add input{
+    background:#fff; color:var(--primary); font-weight:700; font-size:14px;
+    border:2px solid var(--gold); padding:7px 10px; border-radius:var(--r-sm); width:130px;
+  }
+  .name-add button{
+    border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.16); color:#fff;
+    width:32px; height:34px; border-radius:var(--r-sm); font-size:14px;
+  }
+  .name-add button:hover{background:rgba(255,255,255,.28);}
   /* 還沒填名字：整格轉成琥珀色並輕微呼吸，提醒使用者先填 */
-  header input#myName.empty{
+  header #myName.empty{
     background:var(--gold-soft); border-color:var(--gold); color:#7A5D14;
     animation:nameNudge 2.4s ease-in-out infinite;
   }
@@ -100,7 +113,7 @@
     55%    { box-shadow:0 0 0 6px rgba(184,144,46,0); }
   }
   @media (prefers-reduced-motion:reduce){
-    header input#myName.empty{animation:none;}
+    header #myName.empty{animation:none;}
   }
   .btn-signout{
     border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.14);
@@ -175,6 +188,8 @@
   .btn.ghost:hover{background:var(--paper); color:var(--ink);}
   .btn.small{padding:7px 12px; font-size:12.5px;}
   .btn:disabled{opacity:.45; cursor:not-allowed;}
+  .btn.danger{background:#fff; color:var(--warn); border-color:#E7B7AA;}
+  .btn.danger:hover{background:var(--warn-soft); border-color:var(--warn);}
 
   /* 時段選擇 */
   #slotPicker{overflow-x:auto;}
@@ -209,6 +224,7 @@
   .tag.overdue{background:var(--warn-soft); color:var(--warn); border-color:#F0CFC6;}
   .tag.toVerify{background:var(--primary-soft); color:var(--primary); border-color:#D6CCEE;}
   .tag.done{background:var(--ok-soft); color:var(--ok); border-color:#C9E2D5;}
+  .tag.cancelled{background:#F1EFEA; color:var(--ink-faint); border-color:var(--line);}
 
   /* 紀錄卡 */
   .record-card{
@@ -218,6 +234,8 @@
   .record-card.overdue{border-left-color:var(--warn); background:#FFFCFB;}
   .record-card.toVerify{border-left-color:var(--primary);}
   .record-card.done{border-left-color:var(--ok);}
+  .record-card.cancelled{border-left-color:#C9C3B6; background:#FBFAF7;}
+  .record-card.cancelled .rc-title{color:var(--ink-soft); text-decoration:line-through;}
   .rc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:var(--s-3);}
   .rc-title{font-weight:700; font-size:15px;}
   .rc-meta{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
@@ -252,6 +270,7 @@
   .stat.done .num{color:var(--ok);}
   .stat.pending .num{color:var(--gold);}
   .stat.toVerify .num{color:var(--primary);}
+  .stat.cancelled .num{color:var(--ink-faint);}
 
   /* 篩選列 */
   .filter-bar{
@@ -289,7 +308,18 @@
   table.admin-table tr.overdue td{background:var(--warn-soft);}
   table.admin-table tr.toVerify td{background:#FAF8FE;}
   table.admin-table tr.done td{background:#FBFDFC;}
+  table.admin-table tr.cancelled td{color:var(--ink-faint);}
   .roster-table{min-width:0;}
+  .q-input{width:64px; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
+  .modal.modal-wide{max-width:780px;}
+  .modal-wide .form-section{margin-bottom:var(--s-4);}
+  .edit-actions{flex-wrap:wrap; align-items:center; padding-top:var(--s-3); border-top:1px solid var(--line-soft);}
+  .edit-actions .spacer{flex:1;}
+  .edit-note{
+    font-size:12.5px; border-radius:var(--r-sm); padding:8px 12px; margin-bottom:var(--s-3); line-height:1.6;
+    background:var(--paper); border:1px solid var(--line-soft); color:var(--ink-soft);
+  }
+  .edit-note.warn{background:var(--warn-soft); border-color:#F0CFC6; color:#8C3623;}
 
   .empty{color:var(--ink-faint); font-size:13.5px; padding:26px 18px; text-align:center;}
 
@@ -424,7 +454,8 @@
     header .identity{width:100%; justify-content:space-between;}
     .name-label{display:none;}          /* 手機版空間不夠，靠 placeholder 表達 */
     .name-box{flex:1; min-width:0; max-width:170px;}
-    header input#myName{width:100%; font-size:14px; padding:8px 11px;}
+    header #myName{width:100%; font-size:14px; padding:8px 8px;}
+    .name-add input{width:100%; min-width:0;}
     .role-tabs{flex:1;}
     .role-tabs button{flex:1; padding:7px 6px; font-size:12px;}
     main{padding:var(--s-4) var(--s-3) 60px;}
@@ -443,6 +474,7 @@
     table.admin-table tr.overdue{border-left:3px solid var(--warn);}
     table.admin-table tr.toVerify{border-left:3px solid var(--primary);}
     table.admin-table tr.done{border-left:3px solid var(--ok);}
+    table.admin-table tr.cancelled{border-left:3px solid #C9C3B6;}
     table.admin-table td{
       border:none; padding:3px 0; display:flex; gap:var(--s-3);
       justify-content:space-between; align-items:baseline;
@@ -497,7 +529,12 @@
     </div>
     <div class="name-box">
       <span class="name-label" id="nameLabel">填表老師</span>
-      <input id="myName" placeholder="填表老師名字" autocomplete="name" />
+      <select id="myName" aria-label="選擇名字"></select>
+      <div class="name-add" id="nameAdd" hidden>
+        <input id="nameAddInput" placeholder="輸入新名字" autocomplete="off">
+        <button type="button" id="nameAddOk" aria-label="確定">✓</button>
+        <button type="button" id="nameAddCancel" aria-label="取消">✕</button>
+      </div>
     </div>
     <button type="button" class="btn-signout" id="signOutBtn" hidden>登出</button>
   </div>
@@ -624,6 +661,7 @@
           <button data-status="pending">待補課</button>
           <button data-status="overdue">逾期</button>
           <button data-status="done">已完成</button>
+          <button data-status="cancelled">已取消</button>
         </div>
       </div>
       <div id="teacherRecordList"></div>
@@ -666,6 +704,7 @@
           <button data-status="overdue">逾期</button>
           <button data-status="toVerify">待查核</button>
           <button data-status="done">已完成</button>
+          <button data-status="cancelled">已取消</button>
         </div>
         <select id="adminTaFilter"><option value="">所有助教</option></select>
       </div>
@@ -676,7 +715,7 @@
             <tr>
               <th>狀態</th><th>缺課日期</th><th>學生</th><th>班級/導師</th><th>原因</th>
               <th>指派內容</th><th>時段</th><th>助教</th><th>實際補課</th><th>驗收</th>
-              <th>家長已通知</th><th>老師查核</th>
+              <th>家長已通知</th><th>老師查核</th><th>操作</th>
             </tr>
           </thead>
           <tbody id="adminTableBody"></tbody>
@@ -698,7 +737,8 @@
         <div class="field"><label>時段</label>
           <select name="time"><option>1:00-2:00</option><option>3:30-4:00</option><option>6:30-7:00</option></select>
         </div>
-        <div class="field"><label>助教姓名</label><input name="ta" required></div>
+        <div class="field"><label>助教姓名</label><input name="ta" required list="taNameOptions" autocomplete="off"></div>
+        <datalist id="taNameOptions"></datalist>
         <div class="field"><label>名額</label><input name="quota" type="number" value="4" min="1"></div>
         <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增／更新時段</button></div>
       </form>
@@ -815,6 +855,22 @@
     <div class="modal-actions">
       <button class="btn ghost small" id="modalClose">關閉</button>
       <button class="btn small" id="modalCopy">複製文字</button>
+    </div>
+  </div>
+</div>
+
+<!-- 修改紀錄：欄位在開啟時從老師表單複製，表單改欄位這裡會自動跟著變 -->
+<div class="modal-backdrop" id="editBackdrop">
+  <div class="modal modal-wide" role="dialog" aria-labelledby="editTitle">
+    <h3 id="editTitle">修改補課紀錄</h3>
+    <div id="editNotice"></div>
+    <form id="editForm" novalidate></form>
+    <div class="modal-actions edit-actions">
+      <button type="button" class="btn danger small" id="editDelete">刪除這筆</button>
+      <button type="button" class="btn ghost small" id="editCancelRecord">取消補課</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost small" id="editClose">關閉</button>
+      <button type="button" class="btn small" id="editSave">儲存修改</button>
     </div>
   </div>
 </div>

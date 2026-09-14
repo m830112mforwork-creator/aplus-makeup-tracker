@@ -6,7 +6,7 @@
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
-  getFirestore, collection, addDoc, updateDoc, doc,
+  getFirestore, collection, addDoc, updateDoc, deleteDoc, doc,
   onSnapshot, query, orderBy, serverTimestamp, setDoc, getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
@@ -52,6 +52,9 @@ let state = { role: "teacher", name: "" };
 let selectedSlot = null; // {weekday, time, ta}
 let adminFilter = { search: "", status: "all", ta: "" };
 let teacherFilter = { status: "all" };
+// 兩個 Firestore 集合第一次載入完成了沒。還沒載入時名單是空的，
+// 不要急著把使用者的名字標成「不在名單」。
+let loaded = { records: false, roster: false };
 
 // 總表一次最多畫幾列。紀錄累積到上千筆時，全部塞進 DOM 會讓頁面長到幾十萬
 // 像素、節點數破六萬，捲動開始頓。超過的部分按「顯示更多」再追加。
@@ -92,6 +95,7 @@ function initFirebase(){
     banner.innerHTML = "⚠️ 尚未設定 Firebase：請在 app.js 最上方的 FIREBASE_CONFIG 填入妳的新 Firebase 專案設定值，系統才能真正儲存資料。目前是示範狀態，資料不會被保存，也不會要求密碼。";
     connStatus.textContent = "尚未連線 Firebase（示範模式）";
     seedLocalDemoData();
+    loaded.records = loaded.roster = true;
     renderAll();
     return;
   }
@@ -127,6 +131,7 @@ function startDataListeners(){
   unsubscribers.push(
     onSnapshot(query(collection(db,"records"), orderBy("absenceDate","desc")), snap => {
       records = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      loaded.records = true;
       renderAll();
     }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
   );
@@ -134,6 +139,7 @@ function startDataListeners(){
   unsubscribers.push(
     onSnapshot(collection(db,"roster"), async snap => {
       roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      loaded.roster = true;
       if(roster.length === 0){ await seedDefaultRoster(); }
       renderAll();
     }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
@@ -217,9 +223,13 @@ async function seedDefaultRoster(){
     { weekday:"Thu", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
     { weekday:"Fri", time:"6:30-7:00", ta:"Jocelyn", quota:4 },
   ];
+  // 用固定的文件 id：兩台電腦同時第一次開，也不會各自塞一份變成重複的時段
   for(const d of defaults){
-    await addDoc(collection(db,"roster"), d);
+    await setDoc(doc(db,"roster",`${d.weekday}_${d.time}_${d.ta}`), d);
   }
+  // 記號：預設時段已經放過了。管理職之後把時段全部刪光，也不會又自動長回來。
+  // 沒有 ta 欄位，所有畫時段的地方都會略過它。
+  await setDoc(doc(db,"roster","_seeded"), { seeded:true, ta:null });
 }
 
 // 示範模式（未設定 Firebase 時）用記憶體假資料，方便妳先看介面
@@ -245,12 +255,13 @@ function daysSince(dateStr){
 // 老師簽名這一步對應規則說明裡教師須預備的第 4 項「補課追蹤：查看助教
 // 填寫的補課紀錄並簽名」。沒簽名就不算結案。
 function computeStatus(r){
+  if(r.cancelled) return "cancelled";   // 取消的補課不算逾期，也不佔名額
   if(r.actualDate) return r.teacherVerified ? "done" : "toVerify";
   if(daysSince(r.absenceDate) > OVERDUE_DAYS) return "overdue";
   return "pending";
 }
 function statusLabel(s){
-  return { pending:"待補課", overdue:"逾期未補", toVerify:"待老師查核", done:"已完成" }[s];
+  return { pending:"待補課", overdue:"逾期未補", toVerify:"待老師查核", done:"已完成", cancelled:"已取消" }[s];
 }
 function formatStamp(ms){
   if(!ms) return "";
@@ -262,14 +273,20 @@ function showToast(msg){
   t.textContent = msg; t.classList.add("show");
   setTimeout(()=>t.classList.remove("show"), 2000);
 }
-function remainingForSlot(weekday, time, ta){
+// excludeId：改期時把「這筆自己」排除，不然它原本佔的位子會讓時段看起來比實際更滿
+function remainingForSlot(weekday, time, ta, excludeId){
   const slot = roster.find(s=>s.weekday===weekday && s.time===time && s.ta===ta);
   if(!slot || !slot.ta) return 0;
-  const used = records.filter(r=>
-    r.slotWeekday===weekday && r.slotTime===time && r.slotTA===ta && !r.actualDate
-  ).length;
-  return slot.quota - used;
+  return slot.quota - usedInSlot(weekday, time, ta, excludeId);
 }
+function usedInSlot(weekday, time, ta, excludeId){
+  return records.filter(r=>
+    r.id!==excludeId && !r.cancelled && !r.actualDate &&
+    r.slotWeekday===weekday && r.slotTime===time && r.slotTA===ta
+  ).length;
+}
+function slotLabel(weekday, time){ return `${WEEKDAY_LABEL[weekday]||weekday||""} ${time||""}`.trim(); }
+function slotText(weekday, time, ta){ return `${slotLabel(weekday, time)}（${ta||"-"}）`; }
 // 同一個星期＋時段可能排了不只一位助教，全部都要列出來
 function slotsAt(weekday, time){
   return roster.filter(s=>s.weekday===weekday && s.time===time && s.ta);
@@ -300,35 +317,118 @@ document.querySelectorAll("[data-goto]").forEach(a=>{
   a.addEventListener("click", ()=>switchRole(a.dataset.goto));
 });
 
-const nameInput = document.getElementById("myName");
+// ---------------- 姓名：下拉選單 ----------------
+// 這一欄決定你看得到誰的紀錄。原本手打，助教打成「jocelyn」或多一個空格就配對不到，
+// 畫面一片空白也沒有任何提示。改成從名單挑：老師可自行新增名字；助教只能選時段設定
+// 裡有的名字——助教的紀錄是靠時段設定的姓名配對的，名單外的名字填了也看不到東西。
+const nameSelect = document.getElementById("myName");
 const nameLabel = document.getElementById("nameLabel");
+const nameAdd = document.getElementById("nameAdd");
+const nameAddInput = document.getElementById("nameAddInput");
+const CUSTOM_NAMES_KEY = "makeup_custom_names";
 
-// 這一欄決定你看得到誰的紀錄，沒填等於整個系統是空的，所以空白時要醒目
 const NAME_HINT = {
-  teacher: { label:"填表老師", placeholder:"填表老師名字" },
-  ta:      { label:"助教",     placeholder:"助教名字" },
-  admin:   { label:"管理職",   placeholder:"你的名字" },
-  rules:   { label:"填表老師", placeholder:"填表老師名字" },
+  teacher: { label:"填表老師", pick:"選擇填表老師", noun:"老師" },
+  ta:      { label:"助教",     pick:"選擇助教",     noun:"助教" },
+  admin:   { label:"管理職",   pick:"選擇名字",     noun:"" },
+  rules:   { label:"填表老師", pick:"選擇填表老師", noun:"老師" },
 };
+
+function uniqSorted(list){
+  return [...new Set(list.map(n=>String(n||"").trim()).filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b, "zh-Hant"));
+}
+function loadCustomNames(){
+  try{ return JSON.parse(localStorage.getItem(CUSTOM_NAMES_KEY) || "[]"); }catch(_){ return []; }
+}
+function saveCustomName(name){
+  const list = loadCustomNames();
+  if(list.includes(name)) return;
+  list.push(name);
+  try{ localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(list)); }catch(_){}
+}
+function taNameList(){ return uniqSorted(roster.filter(s=>s.ta).map(s=>s.ta)); }
+function teacherNameList(){ return uniqSorted([...records.map(r=>r.teacherName), ...loadCustomNames()]); }
+function namesForRole(role){
+  if(role === "ta") return taNameList();
+  if(role === "admin") return uniqSorted([...teacherNameList(), ...taNameList()]);
+  return teacherNameList();
+}
 
 function refreshNameField(){
   const hint = NAME_HINT[state.role] || NAME_HINT.teacher;
   nameLabel.textContent = hint.label;
-  nameInput.placeholder = hint.placeholder;
-  nameInput.classList.toggle("empty", !state.name);
+  const names = namesForRole(state.role);
+  const ready = loaded.records && loaded.roster;
+
+  // 選項沒變就不重建，否則別人存檔觸發重畫時，使用者正展開的下拉選單會被關掉
+  const sig = [state.role, state.name, ready, ...names].join("|");
+  if(nameSelect.dataset.sig !== sig){
+    nameSelect.dataset.sig = sig;
+    const e = escapeHtml;
+    let html = `<option value="" disabled hidden>${hint.pick}</option>`;
+    html += names.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join("");
+    // 目前的名字不在名單上（例如以前手打的），照樣列出來並標示，讓使用者看得到、改得掉
+    if(state.name && !names.includes(state.name)){
+      const suffix = ready && hint.noun ? `（不在${hint.noun}名單）` : "";
+      html += `<option value="${e(state.name)}">${e(state.name)}${suffix}</option>`;
+    }
+    html += `<option disabled>──────────</option>`;
+    html += state.role === "ta"
+      ? `<option disabled>名單沒有你？請管理職先到時段設定加入</option>`
+      : `<option value="__add__">＋ 新增名字…</option>`;
+    nameSelect.innerHTML = html;
+  }
+  nameSelect.value = state.name || "";
+  nameSelect.classList.toggle("empty", !state.name);
 }
 
-nameInput.value = localStorage.getItem("makeup_name") || "";
-state.name = nameInput.value;
-let nameTimer = null;
-nameInput.addEventListener("input", ()=>{
-  state.name = nameInput.value.trim();
-  localStorage.setItem("makeup_name", state.name);
-  refreshNameField();
-  // 每打一個字就重畫整頁太浪費，等使用者停下來再畫
-  clearTimeout(nameTimer);
-  nameTimer = setTimeout(renderAll, 250);
+function setName(name){
+  state.name = name;
+  try{ localStorage.setItem("makeup_name", name); }catch(_){}
+  renderAll();
+}
+
+nameSelect.addEventListener("change", ()=>{
+  if(nameSelect.value === "__add__"){ startAddName(); return; }
+  setName(nameSelect.value);
 });
+
+function startAddName(){
+  nameSelect.hidden = true;
+  nameAdd.hidden = false;
+  nameAddInput.value = "";
+  nameAddInput.focus();
+}
+function endAddName(){
+  nameAdd.hidden = true;
+  nameSelect.hidden = false;
+  nameSelect.dataset.sig = "";   // 強制重建，把選單值還原成原本的名字
+  refreshNameField();
+}
+function commitAddName(){
+  const raw = nameAddInput.value.trim().replace(/\s+/g, " ");
+  if(!raw){ endAddName(); return; }
+  // 只差在大小寫就當成同一個人，直接用名單上的寫法，避免同一人出現兩種名字
+  const known = uniqSorted([...teacherNameList(), ...taNameList()]);
+  const match = known.find(n=>n.toLowerCase() === raw.toLowerCase());
+  const name = match || raw;
+  if(!match) saveCustomName(name);
+  if(match && match !== raw) showToast(`名單上已經有「${match}」，已直接選取`);
+  nameAdd.hidden = true;
+  nameSelect.hidden = false;
+  setName(name);
+}
+document.getElementById("nameAddOk").addEventListener("click", commitAddName);
+document.getElementById("nameAddCancel").addEventListener("click", endAddName);
+nameAddInput.addEventListener("keydown", e=>{
+  if(e.key === "Enter"){ e.preventDefault(); commitAddName(); }
+  if(e.key === "Escape"){ e.preventDefault(); endAddName(); }
+});
+
+state.name = (localStorage.getItem("makeup_name") || "").trim();
+// 這台電腦用過的名字記下來，老師還沒送出過紀錄時，名單上也找得到自己
+if(state.name) saveCustomName(state.name);
 (function restoreRole(){
   const saved = localStorage.getItem("makeup_role");
   if(saved){
@@ -339,11 +439,15 @@ nameInput.addEventListener("input", ()=>{
   }
 })();
 
-// ---------------- 老師：時段選擇器 ----------------
-function renderSlotPicker(){
-  const wrap = document.getElementById("slotPicker");
+// ---------------- 時段表（新增紀錄、修改紀錄改期共用）----------------
+// opts.selected  目前選中的 {weekday, time, ta}
+// opts.onPick    點了某個時段時呼叫
+// opts.excludeId 改期時排除這筆自己佔的名額
+function renderSlotGrid(wrap, opts){
+  const { selected = null, onPick, excludeId } = opts;
   const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
-  const times = [...new Set(roster.map(s=>s.time))].sort();
+  // 只算有排助教的時段；整列時段都被刪光時，那一列就不該再出現
+  const times = [...new Set(roster.filter(s=>s.ta).map(s=>s.time))].sort();
 
   if(times.length === 0){
     wrap.innerHTML = '<div class="empty">管理職還沒設定任何補課時段</div>';
@@ -364,11 +468,11 @@ function renderSlotPicker(){
       }
       // 一格裡可能有多位助教，每位各一顆按鈕
       const buttons = slots.map(slot=>{
-        const remain = remainingForSlot(w,t,slot.ta);
-        const isSel = selectedSlot && selectedSlot.weekday===w
-                   && selectedSlot.time===t && selectedSlot.ta===slot.ta;
-        const cls = remain<=0 ? "slot-cell full" : (isSel ? "slot-cell selected" : "slot-cell");
-        return `<button type="button" class="${cls}" ${remain<=0?"disabled":""}
+        const remain = remainingForSlot(w, t, slot.ta, excludeId);
+        const isSel = selected && selected.weekday===w
+                   && selected.time===t && selected.ta===slot.ta;
+        const cls = isSel ? "slot-cell selected" : (remain<=0 ? "slot-cell full" : "slot-cell");
+        return `<button type="button" class="${cls}" ${remain<=0 && !isSel ? "disabled" : ""}
           data-w="${escapeHtml(w)}" data-t="${escapeHtml(t)}" data-ta="${escapeHtml(slot.ta)}"
         >${escapeHtml(slot.ta)}<small>剩 ${Math.max(remain,0)} 名</small></button>`;
       }).join("");
@@ -381,21 +485,29 @@ function renderSlotPicker(){
 
   wrap.querySelectorAll("button.slot-cell").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      selectedSlot = { weekday:btn.dataset.w, time:btn.dataset.t, ta:btn.dataset.ta };
-      document.querySelector('[name="slotWeekday"]').value = selectedSlot.weekday;
-      document.querySelector('[name="slotTime"]').value = selectedSlot.time;
-      document.querySelector('[name="slotTA"]').value = selectedSlot.ta;
-      renderSlotPicker();
-      document.getElementById("teacherFormHint").textContent =
-        `已選：${WEEKDAY_LABEL[selectedSlot.weekday]} ${selectedSlot.time}（${selectedSlot.ta}）`;
+      onPick({ weekday:btn.dataset.w, time:btn.dataset.t, ta:btn.dataset.ta });
     });
+  });
+}
+
+function renderSlotPicker(){
+  renderSlotGrid(document.getElementById("slotPicker"), {
+    selected: selectedSlot,
+    onPick: slot=>{
+      selectedSlot = slot;
+      document.querySelector('[name="slotWeekday"]').value = slot.weekday;
+      document.querySelector('[name="slotTime"]').value = slot.time;
+      document.querySelector('[name="slotTA"]').value = slot.ta;
+      renderSlotPicker();
+      document.getElementById("teacherFormHint").textContent = `已選：${slotText(slot.weekday, slot.time, slot.ta)}`;
+    },
   });
 }
 
 // ---------------- 老師：送出新紀錄 ----------------
 document.getElementById("teacherForm").addEventListener("submit", async e=>{
   e.preventDefault();
-  if(!state.name){ showToast("請先在右上角輸入妳的姓名"); return; }
+  if(!state.name){ showToast("請先在右上角選擇你的名字"); return; }
   if(!selectedSlot){ showToast("請選擇補課時段"); return; }
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd.entries());
@@ -424,6 +536,10 @@ document.getElementById("rosterAddForm").addEventListener("submit", async e=>{
   const fd = new FormData(e.target);
   const data = Object.fromEntries(fd.entries());
   data.quota = Number(data.quota);
+  data.ta = String(data.ta || "").trim().replace(/\s+/g, " ");
+  // 大小寫不同也當同一位助教，沿用名單上既有的寫法，否則紀錄會配對不到
+  const knownTa = taNameList().find(n=>n.toLowerCase() === data.ta.toLowerCase());
+  if(knownTa) data.ta = knownTa;
   const existing = roster.find(s=>s.weekday===data.weekday && s.time===data.time && s.ta===data.ta);
   if(db){
     if(existing){ await updateDoc(doc(db,"roster",existing.id), data); }
@@ -447,6 +563,23 @@ async function saveRecordFields(id, fields){
   }
 }
 
+async function deleteRecord(id){
+  if(db){ await deleteDoc(doc(db,"records",id)); }
+  else { records = records.filter(r=>r.id!==id); renderAll(); }
+}
+async function saveRosterFields(id, fields){
+  if(db){ await updateDoc(doc(db,"roster",id), fields); }
+  else {
+    const slot = roster.find(s=>s.id===id);
+    if(slot) Object.assign(slot, fields);
+    renderAll();
+  }
+}
+async function deleteRosterSlot(id){
+  if(db){ await deleteDoc(doc(db,"roster",id)); }
+  else { roster = roster.filter(s=>s.id!==id); renderAll(); }
+}
+
 // ---------------- 訊息範本 ----------------
 function buildParentMessage(r){
   const name = r.studentNameCh || r.studentNameEn || "";
@@ -456,9 +589,9 @@ function buildDeptRequestMessage(r){
   const bookLine = [r.book, r.unit].filter(Boolean).join(" ");
   return `${r.studentNameCh} 學生補課申請時段：\n\n學生：${r.studentNameCh}（${r.className||""}／${r.homeroomTeacher||""}）\n缺課日期：${r.absenceDate}，原因：${r.leaveReason}\n申請時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n負責助教：${r.slotTA}\n需攜帶：${bookLine || "（請見指派內容）"}\n\n請協助提醒學生準時並攜帶課本哦`;
 }
-function buildDeptUpdateMessage(r, statusChoice, newSlot){
+function buildDeptUpdateMessage(r, statusChoice, newSlot, origSlot = slotLabel(r.slotWeekday, r.slotTime)){
   const box = (label) => statusChoice===label ? "☑" : "☐";
-  return `教學部您好，\n${r.studentNameCh}同學（${r.teacherName}老師）補課狀況更新：\n\n原訂時段：${WEEKDAY_LABEL[r.slotWeekday]||r.slotWeekday} ${r.slotTime}\n狀態：${box("已完成")}已完成 ${box("改期")}改期 ${box("取消")}取消\n（若改期）新時段：${statusChoice==="改期" ? (newSlot||"___________") : "___________"}\n\n如需協助請告知，謝謝！`;
+  return `教學部您好，\n${r.studentNameCh}同學（${r.teacherName}老師）補課狀況更新：\n\n原訂時段：${origSlot}\n狀態：${box("已完成")}已完成 ${box("改期")}改期 ${box("取消")}取消\n（若改期）新時段：${statusChoice==="改期" ? (newSlot||"___________") : "___________"}\n\n如需協助請告知，謝謝！`;
 }
 
 // ---------------- Modal ----------------
@@ -501,27 +634,33 @@ function openParentMessageModal(r){
 function openDeptRequestModal(r){
   openModal("傳給教學部：申請補課時段", buildDeptRequestMessage(r));
 }
-function openDeptUpdateModal(r){
-  let statusChoice = "已完成";
+// preset：改期或取消存檔後直接帶進來，把選項和新時段先填好
+//   { choice:"改期"|"取消", origSlot:"週一 1:00-2:00", newSlot:"週三 3:30-4:00" }
+function openDeptUpdateModal(r, preset = {}){
+  let statusChoice = preset.choice || "已完成";
+  const origSlot = preset.origSlot || slotLabel(r.slotWeekday, r.slotTime);
+  const checked = v => statusChoice === v ? "checked" : "";
   const extra = `
     <div class="status-radio">
-      <label><input type="radio" name="deptStatus" value="已完成" checked> 已完成</label>
-      <label><input type="radio" name="deptStatus" value="改期"> 改期</label>
-      <label><input type="radio" name="deptStatus" value="取消"> 取消</label>
+      <label><input type="radio" name="deptStatus" value="已完成" ${checked("已完成")}> 已完成</label>
+      <label><input type="radio" name="deptStatus" value="改期" ${checked("改期")}> 改期</label>
+      <label><input type="radio" name="deptStatus" value="取消" ${checked("取消")}> 取消</label>
     </div>
-    <div class="field" id="newSlotField" style="display:none; margin-bottom:8px;">
-      <label>新時段</label><input id="newSlotInput" placeholder="例如：週三 3:30-4:00">
+    <div class="field" id="newSlotField" style="display:${statusChoice==="改期" ? "block" : "none"}; margin-bottom:8px;">
+      <label>新時段</label><input id="newSlotInput" placeholder="例如：週三 3:30-4:00" value="${escapeHtml(preset.newSlot || "")}">
     </div>`;
-  openModal("傳給教學部：異動通知", buildDeptUpdateMessage(r, statusChoice), extra);
+  const title = preset.choice ? `已${preset.choice}，傳給教學部：異動通知` : "傳給教學部：異動通知";
+  openModal(title, buildDeptUpdateMessage(r, statusChoice, preset.newSlot, origSlot), extra);
+  const newSlotInput = document.getElementById("newSlotInput");
   document.querySelectorAll('input[name="deptStatus"]').forEach(radio=>{
     radio.addEventListener("change", ()=>{
       statusChoice = radio.value;
       document.getElementById("newSlotField").style.display = statusChoice==="改期" ? "block" : "none";
-      modalText.value = buildDeptUpdateMessage(r, statusChoice, document.getElementById("newSlotInput").value);
+      modalText.value = buildDeptUpdateMessage(r, statusChoice, newSlotInput.value, origSlot);
     });
   });
-  document.getElementById("newSlotInput").addEventListener("input", e=>{
-    modalText.value = buildDeptUpdateMessage(r, statusChoice, e.target.value);
+  newSlotInput.addEventListener("input", e=>{
+    modalText.value = buildDeptUpdateMessage(r, statusChoice, e.target.value, origSlot);
   });
 }
 
@@ -533,7 +672,7 @@ function renderTeacherRecords(){
 
   if(!state.name){
     badge.textContent = "";
-    wrap.innerHTML = '<div class="empty">請先在右上角輸入姓名，才能看到你登記的紀錄</div>';
+    wrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字，才能看到你登記的紀錄</div>';
     return;
   }
 
@@ -611,7 +750,7 @@ function renderTaLists(){
   const doneBadge = document.getElementById("taDoneCount");
 
   if(!state.name){
-    pendingWrap.innerHTML = '<div class="empty">請先在右上角輸入姓名（需與管理職在「時段設定」填的助教姓名完全一致）</div>';
+    pendingWrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字</div>';
     doneWrap.innerHTML = "";
     pendingBadge.textContent = "";
     doneBadge.textContent = "";
@@ -620,7 +759,7 @@ function renderTaLists(){
 
   const formState = captureTaFormState();
 
-  const mine = records.filter(r=>r.slotTA===state.name);
+  const mine = records.filter(r=>r.slotTA===state.name && !r.cancelled);   // 取消的不用補
   const pending = mine.filter(r=>!r.actualDate);
   const done = mine.filter(r=>r.actualDate);
 
@@ -671,7 +810,9 @@ function recordCardHtml(r, mode){
       ${kv("單元", r.unit)}
       ${kv("指派補課內容", r.assignedContent)}
       ${kv("預計時長", r.plannedDuration)}
-      ${kv("時段/負責人", `${WEEKDAY_LABEL[r.slotWeekday]||""} ${r.slotTime||""}（${r.slotTA||"-"}）`)}
+      ${kv("時段/負責人", slotText(r.slotWeekday, r.slotTime, r.slotTA))}
+      ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`) : ``}
+      ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
       ${r.actualDate ? `
       ${kv("實際補課日期", r.actualDate)}
       ${kv("驗收成果", r.result)}
@@ -684,12 +825,13 @@ function recordCardHtml(r, mode){
     </div>
 
     <div class="rc-actions">
-      ${mode==="teacher" ? `
+      ${mode==="teacher" && !r.cancelled ? `
         <button class="btn secondary small act-dept-request">傳給教學部：申請時段</button>
         <button class="btn secondary small act-dept-update">傳給教學部：異動通知</button>
       ` : ``}
-      ${mode==="teacher" && r.actualDate && !r.teacherVerified
+      ${mode==="teacher" && r.actualDate && !r.teacherVerified && !r.cancelled
         ? `<button class="btn small act-verify">查核並簽名</button>` : ``}
+      ${mode==="teacher" ? `<button class="btn ghost small act-edit">${r.cancelled ? "修改／恢復" : "修改"}</button>` : ``}
       ${mode==="ta" && !r.actualDate ? `<button class="btn small act-fill">填寫補課成果</button>` : ``}
       ${mode==="ta" && r.actualDate ? `<button class="btn secondary small act-parent-msg">產生家長通知訊息</button>` : ``}
     </div>
@@ -717,11 +859,12 @@ function bindRecordActions(container, list){
   container.querySelectorAll(".record-card").forEach(card=>{
     const r = list.find(x=>x.id===card.dataset.id);
     if(!r) return;
+    card.querySelector(".act-edit")?.addEventListener("click", ()=>openEditModal(r.id));
     card.querySelector(".act-dept-request")?.addEventListener("click", ()=>openDeptRequestModal(r));
     card.querySelector(".act-dept-update")?.addEventListener("click", ()=>openDeptUpdateModal(r));
     card.querySelector(".act-parent-msg")?.addEventListener("click", ()=>openParentMessageModal(r));
     card.querySelector(".act-verify")?.addEventListener("click", async ()=>{
-      if(!state.name){ showToast("請先在右上角輸入你的姓名才能簽名"); return; }
+      if(!state.name){ showToast("請先在右上角選擇你的名字才能簽名"); return; }
       const ok = confirm(
         `確認 ${r.studentNameCh} 的補課紀錄已查核無誤？\n\n` +
         `實際補課：${r.actualDate}\n驗收成果：${r.result || "（未填）"}\n作業狀況：${r.homeworkStatus || "（未填）"}\n\n` +
@@ -753,6 +896,178 @@ function bindRecordActions(container, list){
   });
 }
 
+// ---------------- 修改紀錄（老師改自己的、管理職改任何一筆）----------------
+const editBackdrop = document.getElementById("editBackdrop");
+const editForm = document.getElementById("editForm");
+const editNotice = document.getElementById("editNotice");
+let editState = null;   // { id, slot:{weekday,time,ta} }
+
+function openEditModal(id){
+  const r = records.find(x=>x.id===id);
+  if(!r){ showToast("找不到這筆紀錄，可能已被刪除"); return; }
+  editState = { id, slot: { weekday:r.slotWeekday, time:r.slotTime, ta:r.slotTA } };
+
+  // 欄位直接從老師表單複製（每一區的標題和輸入格），表單日後增減欄位，這裡自動同步
+  editForm.innerHTML = "";
+  document.querySelectorAll("#teacherForm .form-section").forEach(sec=>{
+    const grid = sec.querySelector(".grid");
+    if(!grid) return;
+    const box = document.createElement("div");
+    box.className = "form-section";
+    box.appendChild(sec.querySelector(".sec-head").cloneNode(true));
+    box.appendChild(grid.cloneNode(true));
+    editForm.appendChild(box);
+  });
+  editForm.querySelectorAll("[name]").forEach(el=>{
+    const v = r[el.name] ?? "";
+    // 選單裡已經沒有的舊值（例如之前的「公假」）補回一個選項，避免存檔時被默默改掉
+    if(el.tagName === "SELECT" && v && ![...el.options].some(o=>o.value===v)){
+      el.add(new Option(v, v));
+    }
+    el.value = v;
+  });
+
+  const slotBox = document.createElement("div");
+  slotBox.className = "form-section";
+  slotBox.innerHTML = `<div class="sec-head">補課時段</div><div id="editSlotHint" class="edit-note"></div><div id="editSlotPicker"></div>`;
+  editForm.appendChild(slotBox);
+  renderEditSlots();
+
+  const notes = [];
+  if(r.cancelled){
+    notes.push(`<div class="edit-note warn">這筆已於 ${formatStamp(r.cancelledAt)} 取消${r.cancelledBy ? `（${escapeHtml(r.cancelledBy)}）` : ""}。按「恢復補課」可以重新排回時段。</div>`);
+  }
+  if(r.actualDate){
+    notes.push(`<div class="edit-note">助教已於 ${escapeHtml(r.actualDate)} 完成補課，這筆只能修改文字內容，不能改期或取消。助教填的驗收成果不在這裡改。</div>`);
+  }
+  editNotice.innerHTML = notes.join("");
+
+  document.getElementById("editTitle").textContent = `修改補課紀錄：${r.studentNameCh || ""}`;
+  const cancelBtn = document.getElementById("editCancelRecord");
+  cancelBtn.textContent = r.cancelled ? "恢復補課" : "取消補課";
+  cancelBtn.hidden = !!r.actualDate;
+  editBackdrop.classList.add("open");
+}
+
+function renderEditSlots(){
+  const r = records.find(x=>x.id===editState?.id);
+  const hint = document.getElementById("editSlotHint");
+  const wrap = document.getElementById("editSlotPicker");
+  if(!r || !hint || !wrap) return;
+
+  const cur = slotText(r.slotWeekday, r.slotTime, r.slotTA);
+  if(r.actualDate){
+    hint.className = "edit-note";
+    hint.textContent = `已在 ${cur} 完成補課`;
+    wrap.innerHTML = "";
+    return;
+  }
+  const s = editState.slot;
+  const changed = s.weekday!==r.slotWeekday || s.time!==r.slotTime || s.ta!==r.slotTA;
+  const stillExists = roster.some(x=>x.ta && x.weekday===r.slotWeekday && x.time===r.slotTime && x.ta===r.slotTA);
+  hint.className = "edit-note" + (!changed && !stillExists ? " warn" : "");
+  hint.textContent = changed
+    ? `改期：${cur} → ${slotText(s.weekday, s.time, s.ta)}。儲存後原時段的名額會釋出。`
+    : stillExists
+      ? `目前時段：${cur}。要改期就點下方其他時段。`
+      : `目前時段 ${cur} 已經從時段設定刪除了，建議改到其他時段。`;
+
+  renderSlotGrid(wrap, {
+    selected: s,
+    excludeId: r.id,
+    onPick: slot=>{ editState.slot = slot; renderEditSlots(); },
+  });
+}
+
+function closeEditModal(){
+  editBackdrop.classList.remove("open");
+  editState = null;
+}
+document.getElementById("editClose").addEventListener("click", closeEditModal);
+editBackdrop.addEventListener("click", e=>{ if(e.target === editBackdrop) closeEditModal(); });
+document.addEventListener("keydown", e=>{
+  if(e.key === "Escape" && editBackdrop.classList.contains("open")) closeEditModal();
+});
+
+document.getElementById("editSave").addEventListener("click", async ()=>{
+  const r = records.find(x=>x.id===editState?.id);
+  if(!r){ showToast("找不到這筆紀錄，可能已被刪除"); closeEditModal(); return; }
+  if(!editForm.reportValidity()) return;
+
+  const fields = Object.fromEntries(new FormData(editForm).entries());
+  const s = editState.slot;
+  const slotChanged = !r.actualDate && (s.weekday!==r.slotWeekday || s.time!==r.slotTime || s.ta!==r.slotTA);
+  const origSlot = slotLabel(r.slotWeekday, r.slotTime);
+
+  if(slotChanged){
+    if(!r.cancelled && remainingForSlot(s.weekday, s.time, s.ta, r.id) <= 0){
+      showToast("這個時段剛好額滿了，請選其他時段");
+      renderEditSlots();
+      return;
+    }
+    Object.assign(fields, {
+      slotWeekday: s.weekday, slotTime: s.time, slotTA: s.ta,
+      lastRescheduled: {
+        from: slotText(r.slotWeekday, r.slotTime, r.slotTA),
+        to: slotText(s.weekday, s.time, s.ta),
+        at: Date.now(),
+        by: state.name || "",
+      },
+    });
+  }
+  fields.updatedAt = Date.now();
+  fields.updatedBy = state.name || "";
+
+  const merged = { ...r, ...fields };
+  await saveRecordFields(r.id, fields);
+  closeEditModal();
+  if(slotChanged){
+    showToast("已改期");
+    // 改期一定要讓教學部知道，直接把異動通知帶出來
+    openDeptUpdateModal(merged, { choice:"改期", origSlot, newSlot: slotLabel(s.weekday, s.time) });
+  } else {
+    showToast("已儲存修改");
+  }
+});
+
+document.getElementById("editCancelRecord").addEventListener("click", async ()=>{
+  const r = records.find(x=>x.id===editState?.id);
+  if(!r) return;
+
+  if(r.cancelled){
+    const remain = remainingForSlot(r.slotWeekday, r.slotTime, r.slotTA, r.id);
+    const full = remain <= 0 ? `\n\n⚠ 原時段目前已額滿，恢復後會超額，建議恢復後再改期。` : "";
+    if(!confirm(`恢復 ${r.studentNameCh} 的補課，排回 ${slotText(r.slotWeekday, r.slotTime, r.slotTA)}？${full}`)) return;
+    await saveRecordFields(r.id, { cancelled:false, restoredAt:Date.now(), restoredBy: state.name || "" });
+    closeEditModal();
+    showToast("已恢復補課");
+    return;
+  }
+
+  if(!confirm(
+    `確定取消 ${r.studentNameCh}（缺課 ${r.absenceDate}）的補課？\n\n` +
+    `取消後名額會釋出，助教那邊也不會再出現這筆。紀錄會保留並標示「已取消」，之後可以恢復。`
+  )) return;
+  const fields = { cancelled:true, cancelledAt:Date.now(), cancelledBy: state.name || "" };
+  await saveRecordFields(r.id, fields);
+  closeEditModal();
+  showToast("已取消補課");
+  openDeptUpdateModal({ ...r, ...fields }, { choice:"取消" });
+});
+
+document.getElementById("editDelete").addEventListener("click", async ()=>{
+  const r = records.find(x=>x.id===editState?.id);
+  if(!r) return;
+  const done = r.actualDate ? `\n\n⚠ 助教已經補完這堂課，驗收成果和查核簽名也會一起刪掉。` : "";
+  if(!confirm(
+    `確定要永久刪除 ${r.studentNameCh}（缺課 ${r.absenceDate}）這筆紀錄？\n\n` +
+    `刪除後無法復原。如果只是補課不做了，請改用「取消補課」，紀錄會保留。${done}`
+  )) return;
+  await deleteRecord(r.id);
+  closeEditModal();
+  showToast("已刪除紀錄");
+});
+
 // ---------------- 渲染：管理職儀表板 ----------------
 function matchesAdminFilter(r){
   if(adminFilter.status !== "all" && computeStatus(r) !== adminFilter.status) return false;
@@ -774,6 +1089,7 @@ function renderAdmin(){
     <div class="stat overdue"><div class="num">${count("overdue")}</div><div class="label">逾期未補</div></div>
     <div class="stat toVerify"><div class="num">${count("toVerify")}</div><div class="label">待老師查核</div></div>
     <div class="stat done"><div class="num">${count("done")}</div><div class="label">已完成</div></div>
+    <div class="stat cancelled"><div class="num">${count("cancelled")}</div><div class="label">已取消</div></div>
   `;
 
   // 助教篩選下拉：從時段設定和既有紀錄收集所有助教姓名
@@ -787,6 +1103,12 @@ function renderAdmin(){
     taSelect.innerHTML = `<option value="">所有助教</option>` +
       taNames.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join("");
     taSelect.value = adminFilter.ta;
+  }
+  // 時段設定「助教姓名」欄的候選名單
+  const taList = document.getElementById("taNameOptions");
+  if(taList && taList.dataset.names !== taNames.join("|")){
+    taList.dataset.names = taNames.join("|");
+    taList.innerHTML = taNames.map(n=>`<option value="${e(n)}">`).join("");
   }
 
   const shown = records.filter(matchesAdminFilter);
@@ -804,9 +1126,9 @@ function renderAdmin(){
     ()=>{ adminShown = Infinity; renderAdmin(); });
 
   if(records.length === 0){
-    tbody.innerHTML = `<tr><td colspan="12" class="empty">目前沒有紀錄</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty">目前沒有紀錄</td></tr>`;
   } else if(shown.length === 0){
-    tbody.innerHTML = `<tr><td colspan="12" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="empty">沒有符合篩選條件的紀錄</td></tr>`;
   } else {
     // data-label 是給手機用的：窄螢幕時表格會變成一筆一張卡，欄位名靠它顯示
     tbody.innerHTML = page.map(r=>{
@@ -827,6 +1149,7 @@ function renderAdmin(){
         ${td("老師查核", r.teacherVerified
               ? e(`${r.verifiedBy || "已簽名"}${r.verifiedAt ? ` ${formatStamp(r.verifiedAt)}` : ""}`)
               : "-")}
+        ${td("操作", `<button type="button" class="btn ghost small" data-edit="${e(r.id)}">修改</button>`)}
       </tr>`;
     }).join("");
   }
@@ -841,20 +1164,58 @@ function renderAdmin(){
       (order[a.weekday]??9) - (order[b.weekday]??9) || String(a.time).localeCompare(String(b.time))
     );
     rw.innerHTML = `<div class="table-wrap"><table class="admin-table roster-table">
-      <thead><tr><th>星期</th><th>時段</th><th>助教</th><th>名額</th><th>剩餘</th></tr></thead>
+      <thead><tr><th>星期</th><th>時段</th><th>助教</th><th>名額</th><th>剩餘</th><th>操作</th></tr></thead>
       <tbody>${sorted.map(s=>{
         const remain = remainingForSlot(s.weekday, s.time, s.ta);
         return `<tr>
           <td data-label="星期">${e(WEEKDAY_LABEL[s.weekday] || s.weekday)}</td>
           <td data-label="時段">${e(s.time)}</td>
           <td data-label="助教">${e(s.ta)}</td>
-          <td data-label="名額">${e(s.quota)}</td>
+          <td data-label="名額"><input type="number" min="1" class="q-input" data-quota="${e(s.id)}" value="${e(s.quota)}" aria-label="名額"></td>
           <td data-label="剩餘">${remain <= 0 ? '<span class="tag overdue">額滿</span>' : e(remain)}</td>
+          <td data-label="操作"><button type="button" class="btn danger small" data-del-slot="${e(s.id)}">刪除</button></td>
         </tr>`;
       }).join("")}
       </tbody></table></div>`;
   }
 }
+
+// ---------------- 管理職：總表「修改」、時段名額修改／刪除 ----------------
+document.getElementById("adminTableBody").addEventListener("click", e=>{
+  const btn = e.target.closest("[data-edit]");
+  if(btn) openEditModal(btn.dataset.edit);
+});
+
+const rosterEditor = document.getElementById("rosterEditor");
+rosterEditor.addEventListener("change", async e=>{
+  const input = e.target.closest("[data-quota]");
+  if(!input) return;
+  const slot = roster.find(s=>s.id===input.dataset.quota);
+  if(!slot) return;
+  const quota = Math.floor(Number(input.value));
+  if(!(quota >= 1)){ showToast("名額至少要 1"); input.value = slot.quota; return; }
+  if(quota === Number(slot.quota)) return;
+  const used = usedInSlot(slot.weekday, slot.time, slot.ta);
+  if(quota < used && !confirm(
+    `${slotText(slot.weekday, slot.time, slot.ta)} 目前已經排了 ${used} 位學生，名額改成 ${quota} 會超額。\n\n` +
+    `已經排進來的學生不受影響，只是之後老師選不到這個時段。確定要改？`
+  )){ input.value = slot.quota; return; }
+  await saveRosterFields(slot.id, { quota });
+  showToast(`名額已改為 ${quota}`);
+});
+rosterEditor.addEventListener("click", async e=>{
+  const btn = e.target.closest("[data-del-slot]");
+  if(!btn) return;
+  const slot = roster.find(s=>s.id===btn.dataset.delSlot);
+  if(!slot) return;
+  const used = usedInSlot(slot.weekday, slot.time, slot.ta);
+  const warn = used > 0
+    ? `\n\n⚠ 這個時段還有 ${used} 筆尚未補課的紀錄。刪掉時段不會刪掉這些紀錄，但老師之後選不到這個時段；建議先把這幾筆改期。`
+    : "";
+  if(!confirm(`確定刪除時段 ${slotText(slot.weekday, slot.time, slot.ta)}？${warn}`)) return;
+  await deleteRosterSlot(slot.id);
+  showToast("已刪除時段");
+});
 
 // ---------------- 管理職：篩選列 ----------------
 let searchTimer = null;
@@ -884,6 +1245,7 @@ document.getElementById("adminTaFilter").addEventListener("change", e=>{
 function renderAll(){
   dirty.teacher = dirty.ta = dirty.admin = true;
   renderActiveView();
+  if(editState) renderEditSlots();   // 修改視窗開著時，時段剩餘名額也要即時反映別人的變動
 }
 
 function renderActiveView(){
