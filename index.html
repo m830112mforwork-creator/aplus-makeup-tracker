@@ -340,6 +340,7 @@
   .roster-table{min-width:0;}
   .q-input{width:64px; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .note-input{width:100%; min-width:120px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
+  .time-input{width:100%; min-width:96px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .modal.modal-wide{max-width:780px;}
   .modal-wide .form-section{margin-bottom:var(--s-4);}
   .edit-actions{flex-wrap:wrap; align-items:center; padding-top:var(--s-3); border-top:1px solid var(--line-soft);}
@@ -768,8 +769,9 @@
             <option value="Thu">週四</option><option value="Fri">週五</option>
           </select>
         </div>
-        <div class="field"><label>時段</label>
-          <select name="time"><option>1:00-2:00</option><option>3:30-4:00</option><option>6:30-7:00</option></select>
+        <div class="field"><label>時段 <span class="hint">自行輸入或點選</span></label>
+          <input name="time" required list="timeOptions" placeholder="例如：3:00-4:00" autocomplete="off">
+          <datalist id="timeOptions"></datalist>
         </div>
         <div class="field"><label>助教姓名</label><input name="ta" required list="taNameOptions" autocomplete="off"></div>
         <datalist id="taNameOptions"></datalist>

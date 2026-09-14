@@ -345,6 +345,28 @@ function slotTextWithNote(dayKey, time, ta){
   const note = slotNote(dayKey, time, ta);
   return `${slotLabel(dayKey, time)}（${ta || "-"}${note ? `・${note}` : ""}）`;
 }
+// ---------------- 時段文字 ----------------
+// 管理職自己輸入時段，統一整理成「3:00-4:00」這種寫法。
+// 不整理的話「3:00~4:00」和「3:00-4:00」會被當成兩個不同時段，紀錄就配對不起來。
+function normalizeTime(raw){
+  const text = String(raw || "")
+    .replace(/：/g, ":")
+    .replace(/[~～〜－–—至到]/g, "-")
+    .replace(/\s+/g, "");
+  const m = text.match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  const [h1, m1, h2, m2] = [m[1], m[2], m[3], m[4]].map(Number);
+  if(h1 > 23 || h2 > 23 || m1 > 59 || m2 > 59) return null;
+  return `${h1}:${pad2(m1)}-${h2}:${pad2(m2)}`;
+}
+// 時段排序：照開始時間。課後補課都在下午，1～9 點當成下午，才會排在 10、11、12 點後面
+function timeSortKey(time){
+  const [h, m] = String(time || "").split("-")[0].split(":").map(Number);
+  if(Number.isNaN(h)) return 9999;
+  return ((h >= 1 && h <= 9) ? h + 12 : h) * 60 + (m || 0);
+}
+function compareTime(a, b){ return timeSortKey(a) - timeSortKey(b) || String(a).localeCompare(String(b)); }
+
 // 紀錄的「哪一天」：有補課日期用日期，沒有就退回星期
 function dayOf(r){ return r.slotDate || r.slotWeekday; }
 // 某星期在指定日期「之後」的第一個日期（不含當天）
@@ -524,7 +546,7 @@ function renderSlotGrid(wrap, opts){
   const thisMonday = mondayOf(today);
   const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
   // 只算有排助教的時段；整列時段都被刪光時，那一列就不該再出現
-  const times = [...new Set(roster.filter(s=>s.ta).map(s=>s.time))].sort();
+  const times = [...new Set(roster.filter(s=>s.ta).map(s=>s.time))].sort(compareTime);
 
   if(times.length === 0){
     wrap.innerHTML = '<div class="empty">還沒有任何補課時段。請管理職先到「管理職」頁最下方的「助教時段與名額設定」新增。</div>';
@@ -657,6 +679,10 @@ document.getElementById("rosterAddForm").addEventListener("submit", e=>{
   withBusy(form.querySelector('[type="submit"]'), async ()=>{
     const data = Object.fromEntries(new FormData(form).entries());
     data.quota = Number(data.quota);
+    if(!(data.quota >= 1)){ showToast("名額至少要 1"); return; }
+    const time = normalizeTime(data.time);
+    if(!time){ showToast("時段請寫成「開始-結束」，例如 3:00-4:00"); return; }
+    data.time = time;
     data.note = String(data.note || "").trim();
     data.ta = String(data.ta || "").trim().replace(/\s+/g, " ");
     // 大小寫不同也當同一位助教，沿用名單上既有的寫法，否則紀錄會配對不到
@@ -1374,6 +1400,14 @@ function renderAdmin(){
       taNames.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join("");
     taSelect.value = adminFilter.ta;
   }
+  // 時段欄的候選：目前已經有的時段，還沒有時段時先給幾個常用的
+  const timeNames = [...new Set(roster.filter(s=>s.ta).map(s=>s.time))].sort(compareTime);
+  const timeSuggest = timeNames.length ? timeNames : ["1:00-2:00", "3:30-4:00", "6:30-7:00"];
+  const timeList = document.getElementById("timeOptions");
+  if(timeList && timeList.dataset.names !== timeSuggest.join("|")){
+    timeList.dataset.names = timeSuggest.join("|");
+    timeList.innerHTML = timeSuggest.map(t=>`<option value="${e(t)}">`).join("");
+  }
   // 時段設定「助教姓名」欄的候選名單
   const taList = document.getElementById("taNameOptions");
   if(taList && taList.dataset.names !== taNames.join("|")){
@@ -1432,7 +1466,7 @@ function renderAdmin(){
   else {
     const order = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4 };
     const sorted = [...slots].sort((a,b)=>
-      (order[a.weekday]??9) - (order[b.weekday]??9) || String(a.time).localeCompare(String(b.time))
+      (order[a.weekday]??9) - (order[b.weekday]??9) || compareTime(a.time, b.time)
     );
     rw.innerHTML = `<div class="table-wrap"><table class="admin-table roster-table">
       <thead><tr><th>星期</th><th>時段</th><th>助教</th><th>備註</th><th>名額</th><th>之後已排</th><th>操作</th></tr></thead>
@@ -1440,7 +1474,7 @@ function renderAdmin(){
         const upcoming = upcomingInSlot(s).length;
         return `<tr>
           <td data-label="星期">${e(WEEKDAY_LABEL[s.weekday] || s.weekday)}</td>
-          <td data-label="時段">${e(s.time)}</td>
+          <td data-label="時段"><input class="time-input" data-time="${e(s.id)}" value="${e(s.time)}" list="timeOptions" aria-label="時段"></td>
           <td data-label="助教">${e(s.ta)}</td>
           <td data-label="備註"><input class="note-input" data-note="${e(s.id)}" value="${e(s.note || "")}" placeholder="例如：F-B Classroom" aria-label="備註"></td>
           <td data-label="名額"><input type="number" min="1" class="q-input" data-quota="${e(s.id)}" value="${e(s.quota)}" aria-label="名額"></td>
@@ -1460,6 +1494,33 @@ document.getElementById("adminTableBody").addEventListener("click", e=>{
 
 const rosterEditor = document.getElementById("rosterEditor");
 rosterEditor.addEventListener("change", async e=>{
+  const timeInput = e.target.closest("[data-time]");
+  if(timeInput){
+    const slot = roster.find(s=>s.id===timeInput.dataset.time);
+    if(!slot) return;
+    const time = normalizeTime(timeInput.value);
+    if(!time){ showToast("時段請寫成「開始-結束」，例如 3:00-4:00"); timeInput.value = slot.time; return; }
+    if(time === slot.time){ timeInput.value = slot.time; return; }
+    const dayName = WEEKDAY_LABEL[slot.weekday] || slot.weekday;
+    if(roster.some(x=>x.id!==slot.id && x.ta===slot.ta && x.weekday===slot.weekday && x.time===time)){
+      showToast(`${slot.ta} 在${dayName} ${time} 已經有時段了`);
+      timeInput.value = slot.time;
+      return;
+    }
+    // 之後已經排進這個時段的學生要跟著改到新時間；已經補完課的紀錄保留當時的時間
+    const upcoming = upcomingInSlot(slot);
+    if(upcoming.length && !confirm(
+      `把 ${slot.ta} 每${dayName} ${slot.time} 改成 ${time}？\n\n` +
+      `之後已經排了 ${upcoming.length} 位學生，會一起改到新的時間；已經補完課的紀錄維持原本的時間。\n` +
+      `改完記得通知教學部和學生。`
+    )){ timeInput.value = slot.time; return; }
+    if(!(await saveRosterFields(slot.id, { time }))){ timeInput.value = slot.time; return; }
+    for(const r of upcoming){
+      if(!(await saveRecordFields(r.id, { slotTime: time }))) return;
+    }
+    showToast(upcoming.length ? `時段已改為 ${time}，${upcoming.length} 位學生一併更新` : `時段已改為 ${time}`);
+    return;
+  }
   const noteInput = e.target.closest("[data-note]");
   if(noteInput){
     const slot = roster.find(s=>s.id===noteInput.dataset.note);
