@@ -612,11 +612,11 @@ function buildParentMessage(r){
     return m ? `${+m[1]}/${+m[2]}` : (d || "");
   };
   const who = r.studentNameEn ? `${r.studentNameCh}（${r.studentNameEn}）` : r.studentNameCh;
+  const callName = r.studentNameEn || r.studentNameCh;   // 內文用英文名字，沒填才用中文名字
   const lines = [
-    `${who}家長您好：`,
+    `${who}爸爸媽媽您好：`,
     ``,
-    `我是英語補課助教 ${r.slotTA || ""}。`,
-    `${r.studentNameCh} ${md(r.absenceDate)} 請假的英語課程，已於 ${md(r.actualDate)} 完成補課。`,
+    `${callName} ${md(r.absenceDate)} 請假的英語課程，已於 ${md(r.actualDate)} 完成補課囉!`,
     ``,
     `【補課內容】`,
     r.assignedContent || "（無）",
