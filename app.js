@@ -613,7 +613,7 @@ function buildParentMessage(r){
   };
   const callName = r.studentNameEn || r.studentNameCh;   // 內文用英文名字，沒填才用中文名字
   const lines = [
-    `[補課完成通知]`,
+    `【補課完成通知】`,
     ``,
     `${callName} ${md(r.absenceDate)} 請假的英語課程，已於 ${md(r.actualDate)} 完成補課囉!`,
     ``,
