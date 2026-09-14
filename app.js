@@ -611,10 +611,9 @@ function buildParentMessage(r){
     const m = String(d || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
     return m ? `${+m[1]}/${+m[2]}` : (d || "");
   };
-  const who = r.studentNameEn ? `${r.studentNameCh}（${r.studentNameEn}）` : r.studentNameCh;
   const callName = r.studentNameEn || r.studentNameCh;   // 內文用英文名字，沒填才用中文名字
   const lines = [
-    `${who}爸爸媽媽您好：`,
+    `[補課完成通知]`,
     ``,
     `${callName} ${md(r.absenceDate)} 請假的英語課程，已於 ${md(r.actualDate)} 完成補課囉!`,
     ``,
