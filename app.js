@@ -384,8 +384,101 @@ function escapeHtml(v){
     ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 }
 
+// ---------------- 管理職密碼 ----------------
+// 用途是擋「誤入」：老師、助教不會不小心進到管理職頁去改時段或刪資料。
+// 這不是真正的資安保護：資料庫規則仍是開放的，程式碼也放在公開的 GitHub 上，懂技術的人還是能繞過。
+// 要真正保護，得改用 Firebase 帳號登入，並在資料庫規則限制誰能寫入。
+// 程式裡只放「鹽＋密碼」的 SHA-256 雜湊，不放原本的密碼；要換密碼就重新產生 ADMIN_PASS_HASH。
+const ADMIN_PASS_SALT = "aplus-makeup-tracker/admin:";
+const ADMIN_PASS_HASH = "10db4ff190b624102091fcb39dee3b1847d80477fc8fe4b9168ee73cef713ec7";
+const ADMIN_UNLOCK_KEY = "makeup_admin_unlocked";   // 存在 sessionStorage：關掉瀏覽器就要重新輸入
+
+// 小型 SHA-256。不用瀏覽器內建的 crypto.subtle，因為它只在 https／localhost 能用，預覽檔會失效。
+function sha256Hex(text){
+  // 常數 K 與初始值 H：前幾個質數的立方根／平方根小數部分（標準定義，執行時算出來，免得抄錯）
+  const K = [], H = [];
+  for(let n = 2; K.length < 64; n++){
+    let prime = true;
+    for(let d = 2; d * d <= n; d++){ if(n % d === 0){ prime = false; break; } }
+    if(!prime) continue;
+    if(H.length < 8) H.push((Math.pow(n, 1/2) % 1) * 4294967296 | 0);
+    K.push((Math.pow(n, 1/3) % 1) * 4294967296 | 0);
+  }
+  const bytes = new TextEncoder().encode(text);
+  const blocks = Math.ceil((bytes.length + 9) / 64);
+  const data = new Uint8Array(blocks * 64);
+  data.set(bytes);
+  data[bytes.length] = 0x80;
+  const view = new DataView(data.buffer);
+  const bitLength = bytes.length * 8;
+  view.setUint32(data.length - 8, Math.floor(bitLength / 4294967296));
+  view.setUint32(data.length - 4, bitLength >>> 0);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  const w = new Array(64);
+  for(let blk = 0; blk < blocks; blk++){
+    for(let i = 0; i < 16; i++) w[i] = view.getUint32(blk * 64 + i * 4) | 0;
+    for(let i = 16; i < 64; i++){
+      w[i] = (w[i-16] + (rotr(w[i-15], 7) ^ rotr(w[i-15], 18) ^ (w[i-15] >>> 3))
+            + w[i-7] + (rotr(w[i-2], 17) ^ rotr(w[i-2], 19) ^ (w[i-2] >>> 10))) | 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for(let i = 0; i < 64; i++){
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    [a, b, c, d, e, f, g, h].forEach((v, i)=>{ H[i] = (H[i] + v) | 0; });
+  }
+  return H.map(x => (x >>> 0).toString(16).padStart(8, "0")).join("");
+}
+
+function isAdminUnlocked(){
+  try{ return sessionStorage.getItem(ADMIN_UNLOCK_KEY) === ADMIN_PASS_HASH; }catch(_){ return false; }
+}
+function setAdminUnlocked(on){
+  try{
+    if(on) sessionStorage.setItem(ADMIN_UNLOCK_KEY, ADMIN_PASS_HASH);
+    else sessionStorage.removeItem(ADMIN_UNLOCK_KEY);
+  }catch(_){}
+}
+
+const adminLockBackdrop = document.getElementById("adminLockBackdrop");
+const adminLockInput = document.getElementById("adminLockInput");
+const adminLockError = document.getElementById("adminLockError");
+function openAdminLock(){
+  adminLockInput.value = "";
+  adminLockError.textContent = "";
+  adminLockBackdrop.classList.add("open");
+  setTimeout(()=>adminLockInput.focus(), 0);
+}
+function closeAdminLock(){ adminLockBackdrop.classList.remove("open"); }
+
+document.getElementById("adminLockForm").addEventListener("submit", e=>{
+  e.preventDefault();
+  if(sha256Hex(ADMIN_PASS_SALT + adminLockInput.value.trim()) === ADMIN_PASS_HASH){
+    setAdminUnlocked(true);
+    closeAdminLock();
+    switchRole("admin");
+    showToast("已進入管理職");
+  } else {
+    adminLockError.textContent = "密碼不正確，請再試一次";
+    adminLockInput.select();
+  }
+});
+document.getElementById("adminLockCancel").addEventListener("click", closeAdminLock);
+adminLockBackdrop.addEventListener("click", e=>{ if(e.target === adminLockBackdrop) closeAdminLock(); });
+document.addEventListener("keydown", e=>{
+  if(e.key === "Escape" && adminLockBackdrop.classList.contains("open")) closeAdminLock();
+});
+document.getElementById("adminLockBtn").addEventListener("click", ()=>{
+  setAdminUnlocked(false);
+  switchRole("teacher");
+  showToast("管理職已鎖定");
+});
+
 // ---------------- 角色切換 / 身分列 ----------------
 function switchRole(role){
+  if(role === "admin" && !isAdminUnlocked()){ openAdminLock(); return; }
   state.role = role;
   document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b.dataset.role===role));
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
@@ -518,7 +611,8 @@ state.name = (localStorage.getItem("makeup_name") || "").trim();
 // 這台電腦用過的名字記下來，老師還沒送出過紀錄時，名單上也找得到自己
 if(state.name) saveCustomName(state.name);
 (function restoreRole(){
-  const saved = localStorage.getItem("makeup_role");
+  let saved = localStorage.getItem("makeup_role");
+  if(saved === "admin" && !isAdminUnlocked()) saved = "teacher";
   if(saved){
     state.role = saved;
     document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b.dataset.role===saved));
@@ -823,10 +917,12 @@ function buildDeptRequestMessage(r){
   const bookLine = [r.book, r.unit].filter(Boolean).join(" ");
   const note = slotNote(dayOf(r), r.slotTime, r.slotTA);
   const classLine = [r.className, r.homeroomTeacher && `${r.homeroomTeacher}英語導師`].filter(Boolean).join("／");
+  // 中文名字後面帶英文名字（沒填就只放中文），教學部叫學生時常用英文名
+  const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
   return [
-    `${r.studentNameCh} 英語補課申請時段：`,
+    `${who} 英語補課申請時段：`,
     ``,
-    `補課學生：${r.studentNameCh}${classLine ? `（${classLine}）` : ""}`,
+    `補課學生：${who}${classLine ? `（${classLine}）` : ""}`,
     `缺課日期：${r.absenceDate}，原因：${r.leaveReason}`,
     `申請時段：${slotLabel(dayOf(r), r.slotTime)}`,
     `負責助教：${r.slotTA}${note ? `（${note}）` : ""}`,

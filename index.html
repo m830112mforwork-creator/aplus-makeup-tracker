@@ -355,6 +355,16 @@
   .note-input{width:100%; min-width:120px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .time-input{width:100%; min-width:96px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .modal.modal-wide{max-width:780px;}
+  .modal.modal-narrow{max-width:360px;}
+  .admin-lock-sub{font-size:12.5px; color:var(--ink-soft); margin:0 0 var(--s-3); line-height:1.6;}
+  .admin-lock-input{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:var(--r-sm);
+    font-size:16px; letter-spacing:.15em; text-align:center; background:#fff; color:var(--ink);
+  }
+  .admin-lockbar{
+    display:flex; align-items:center; justify-content:space-between; gap:var(--s-3); flex-wrap:wrap;
+    font-size:12.5px; color:var(--ink-soft); margin-bottom:var(--s-3);
+  }
   .modal-wide .form-section{margin-bottom:var(--s-4);}
   .edit-actions{flex-wrap:wrap; align-items:center; padding-top:var(--s-3); border-top:1px solid var(--line-soft);}
   .edit-actions .spacer{flex:1;}
@@ -744,6 +754,10 @@
 
   <!-- ================= 管理職 ================= -->
   <section class="view" id="view-admin">
+    <div class="admin-lockbar">
+      <span>管理職已解鎖，關掉瀏覽器後要重新輸入密碼</span>
+      <button type="button" class="btn ghost small" id="adminLockBtn">鎖定管理職</button>
+    </div>
     <div class="stat-row" id="adminStats"></div>
 
     <div class="panel">
@@ -929,6 +943,20 @@
       <button type="button" class="btn small" id="editSave">儲存修改</button>
     </div>
   </div>
+</div>
+
+<!-- 管理職密碼：擋誤入用，不是資安保護（說明見 app.js「管理職密碼」） -->
+<div class="modal-backdrop" id="adminLockBackdrop">
+  <form class="modal modal-narrow" id="adminLockForm" autocomplete="off">
+    <h3>管理職密碼</h3>
+    <p class="admin-lock-sub">管理職頁可以修改時段、刪除紀錄，請輸入密碼。</p>
+    <input type="password" id="adminLockInput" class="admin-lock-input" inputmode="numeric" placeholder="請輸入密碼" autocomplete="off">
+    <div class="lock-error" id="adminLockError"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn ghost small" id="adminLockCancel">取消</button>
+      <button type="submit" class="btn small">進入管理職</button>
+    </div>
+  </form>
 </div>
 
 <div class="toast" id="toast"></div>
