@@ -189,6 +189,19 @@
   .btn.small{padding:7px 12px; font-size:12.5px;}
   .btn:disabled{opacity:.45; cursor:not-allowed;}
   .btn.danger{background:#fff; color:var(--warn); border-color:#E7B7AA;}
+
+  /* 老師表單的填寫範本列 */
+  .tpl-bar{
+    display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-3);
+    background:var(--gold-soft); border:1px solid var(--gold-line); border-radius:var(--r-sm);
+    padding:var(--s-3) var(--s-4); margin-bottom:var(--s-5);
+  }
+  .tpl-title{font-size:12.5px; font-weight:700; color:#7A5D14;}
+  .tpl-buttons{display:flex; flex-wrap:wrap; gap:var(--s-2);}
+  /* 套用範本時，被填入的欄位閃一下，讓老師知道改了哪裡 */
+  @keyframes tplFlash{ 0%{background:var(--gold-soft); border-color:var(--gold);} 100%{background:#fff; border-color:var(--line);} }
+  .field .tpl-flash{animation:tplFlash 1.4s ease-out;}
+  @media (prefers-reduced-motion:reduce){ .field .tpl-flash{animation:none;} }
   .btn.danger:hover{background:var(--warn-soft); border-color:var(--warn);}
 
   /* 時段選擇 */
@@ -587,6 +600,12 @@
     <div class="panel">
       <h2>新增請假補課紀錄</h2>
       <form id="teacherForm">
+
+        <!-- 填寫範本：按鈕由 app.js 的 FORM_TEMPLATES 產生，套用後老師再改成學生的實際內容 -->
+        <div class="tpl-bar">
+          <span class="tpl-title">不知道怎麼寫？先套用範本再修改：</span>
+          <div class="tpl-buttons" id="templateBar"></div>
+        </div>
 
         <div class="form-section">
           <div class="sec-head">學生資料</div>

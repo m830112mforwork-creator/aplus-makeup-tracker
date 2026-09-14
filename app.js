@@ -633,6 +633,57 @@ function renderSlotPicker(){
   });
 }
 
+// ---------------- 老師：填寫範本 ----------------
+// 老師開單時一鍵套用，再改成這位學生的實際內容。
+// 內容取自部門提供的範例和「補課合作說明」的四型職責；要增修範本就改這個清單，按鈕會自動跟著變。
+// 只填「補什麼」相關的欄位，學生資料、日期、預計時長一律不動。
+const FORM_TEMPLATES = [
+  { label:"綜合範例", fields:{
+      coreCourse:"VAA+SAA", book:"APO", unit:"L1Ch1 / unit 1 / P.1",
+      assignedContent:"1. 帶讀 APO L1Ch1 單字句型（朗誦型）\n2. 補寫 H.H.H. Workbook（書寫型）\n3. 補考 APO L1Ch1 畫底線單字聽寫在 Quiz Book（補考型），並完成罰寫、訂正、批改" } },
+  { label:"書寫型", fields:{
+      coreCourse:"VAA+SAA", book:"H.H.H. Workbook", unit:"L1Ch1 / unit 1 / P.1",
+      assignedContent:"1. 補寫 H.H.H. Workbook L1Ch1（書寫型），在英語教室完成\n2. Quiz 罰寫訂正（書寫型），完成後請助教批改" } },
+  { label:"朗誦型", fields:{
+      coreCourse:"OAA", book:"APO", unit:"L1Ch1 / unit 1 / P.1",
+      assignedContent:"1. 帶讀 APO L1Ch1 單字句型（朗誦型）\n2. Speaking & Reading 文章跟著音檔念讀，念給助教聽（朗誦型）" } },
+  { label:"補考型", fields:{
+      coreCourse:"VAA+SAA", book:"APO", unit:"L1Ch1 / unit 1 / P.1",
+      assignedContent:"補考 APO L1Ch1 畫底線單字聽寫在 Quiz Book（補考型），並完成罰寫、訂正、批改" } },
+  { label:"觀念解答型", fields:{
+      coreCourse:"GAA", book:"Grammar Material", unit:"Unit 1 / P.1",
+      assignedContent:"講解 Grammar Unit 1 觀念（觀念解答型），學生完成練習題後請助教批改、訂正" } },
+];
+
+function applyTemplate(tpl){
+  const form = document.getElementById("teacherForm");
+  const names = Object.keys(tpl.fields);
+  const labelOf = el => el.closest(".field")?.querySelector("label")?.childNodes[0]?.textContent.trim() || el.name;
+  // 已經填了、而且跟範本不一樣的欄位才需要問，免得老師辛苦打的內容被蓋掉
+  const overwrite = names.map(n=>form.elements[n]).filter(el=>el.value.trim() && el.value !== tpl.fields[el.name]);
+  if(overwrite.length && !confirm(`套用「${tpl.label}」範本會蓋掉你已經填的：${overwrite.map(labelOf).join("、")}。\n\n確定要套用嗎？`)) return;
+  names.forEach(n=>{
+    const el = form.elements[n];
+    el.value = tpl.fields[n];
+    el.classList.remove("tpl-flash");
+    void el.offsetWidth;   // 讓閃爍動畫可以重新播放
+    el.classList.add("tpl-flash");
+  });
+  showToast(`已套用「${tpl.label}」範本，請改成這位學生的實際內容`);
+  form.elements.assignedContent.focus();
+}
+
+(function renderTemplateBar(){
+  const bar = document.getElementById("templateBar");
+  if(!bar) return;
+  bar.innerHTML = FORM_TEMPLATES.map((t, i)=>
+    `<button type="button" class="btn secondary small" data-tpl="${i}">${escapeHtml(t.label)}</button>`).join("");
+  bar.addEventListener("click", e=>{
+    const btn = e.target.closest("[data-tpl]");
+    if(btn) applyTemplate(FORM_TEMPLATES[Number(btn.dataset.tpl)]);
+  });
+})();
+
 // ---------------- 老師：送出新紀錄 ----------------
 document.getElementById("teacherForm").addEventListener("submit", e=>{
   e.preventDefault();
