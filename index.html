@@ -213,6 +213,11 @@
     background:var(--primary); color:#fff; border-color:var(--primary); font-weight:700;
   }
   .slot-cell small{display:block; font-weight:400; opacity:.72; margin-top:2px; font-size:11px;}
+  .slot-cell .slot-note{
+    color:var(--primary); opacity:.9; font-size:10.5px; margin-top:1px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .slot-cell.selected .slot-note{color:#fff;}
   .slot-multi{display:flex; flex-direction:column; gap:4px;}
 
   /* 狀態標籤 */
@@ -225,6 +230,7 @@
   .tag.toVerify{background:var(--primary-soft); color:var(--primary); border-color:#D6CCEE;}
   .tag.done{background:var(--ok-soft); color:var(--ok); border-color:#C9E2D5;}
   .tag.cancelled{background:#F1EFEA; color:var(--ink-faint); border-color:var(--line);}
+  .tag.noShow{background:var(--warn); color:#fff; border-color:var(--warn);}
 
   /* 紀錄卡 */
   .record-card{
@@ -236,6 +242,15 @@
   .record-card.done{border-left-color:var(--ok);}
   .record-card.cancelled{border-left-color:#C9C3B6; background:#FBFAF7;}
   .record-card.cancelled .rc-title{color:var(--ink-soft); text-decoration:line-through;}
+  .record-card.noShow{border-left-color:var(--warn); background:#FFF8F6;}
+  .rc-alert{
+    margin-top:var(--s-3); background:var(--warn-soft); border:1px solid #F0CFC6; color:#8C3623;
+    border-radius:var(--r-sm); padding:8px 12px; font-size:12.5px; line-height:1.6;
+  }
+  .attend-alert{
+    background:var(--gold-soft); border:1px solid var(--gold-line); color:#7A5D14;
+    border-radius:var(--r-sm); padding:8px 12px; font-size:12.5px; line-height:1.6;
+  }
   .rc-head{display:flex; justify-content:space-between; align-items:flex-start; gap:var(--s-3);}
   .rc-title{font-weight:700; font-size:15px;}
   .rc-meta{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
@@ -271,6 +286,7 @@
   .stat.pending .num{color:var(--gold);}
   .stat.toVerify .num{color:var(--primary);}
   .stat.cancelled .num{color:var(--ink-faint);}
+  .stat.noShow .num{color:var(--warn);}
 
   /* 篩選列 */
   .filter-bar{
@@ -294,7 +310,7 @@
 
   /* 表格 */
   .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r-md);}
-  table.admin-table{width:100%; border-collapse:collapse; font-size:13px; min-width:900px;}
+  table.admin-table{width:100%; border-collapse:collapse; font-size:13px; min-width:980px;}
   table.admin-table th, table.admin-table td{
     padding:9px 11px; text-align:left; border-bottom:1px solid var(--line-soft);
     vertical-align:top;
@@ -309,8 +325,10 @@
   table.admin-table tr.toVerify td{background:#FAF8FE;}
   table.admin-table tr.done td{background:#FBFDFC;}
   table.admin-table tr.cancelled td{color:var(--ink-faint);}
+  table.admin-table tr.noShow td{background:#FDF1ED;}
   .roster-table{min-width:0;}
   .q-input{width:64px; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
+  .note-input{width:100%; min-width:120px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .modal.modal-wide{max-width:780px;}
   .modal-wide .form-section{margin-bottom:var(--s-4);}
   .edit-actions{flex-wrap:wrap; align-items:center; padding-top:var(--s-3); border-top:1px solid var(--line-soft);}
@@ -328,7 +346,7 @@
     padding:var(--s-3) 0 0; font-size:12.5px; color:var(--ink-soft); flex-wrap:wrap;
   }
 
-  /* 規則說明 */
+  /* 補課合作說明 */
   .rules-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(290px,1fr)); gap:var(--s-4);}
   .rule-card{
     background:var(--panel); border:1px solid var(--line); border-radius:var(--r-md);
@@ -358,7 +376,7 @@
     margin-top:var(--s-2); line-height:1.6;
   }
 
-  /* 老師表單裡的助教職責提醒（內容同規則說明第一張卡） */
+  /* 老師表單裡的助教職責提醒（內容同補課合作說明第一張卡） */
   .duty-reminder{
     background:var(--primary-soft); border:1px solid #DCD4EE;
     border-radius:var(--r-sm); padding:var(--s-3) var(--s-4); margin-bottom:var(--s-4);
@@ -475,6 +493,7 @@
     table.admin-table tr.toVerify{border-left:3px solid var(--primary);}
     table.admin-table tr.done{border-left:3px solid var(--ok);}
     table.admin-table tr.cancelled{border-left:3px solid #C9C3B6;}
+    table.admin-table tr.noShow{border-left:3px solid var(--warn);}
     table.admin-table td{
       border:none; padding:3px 0; display:flex; gap:var(--s-3);
       justify-content:space-between; align-items:baseline;
@@ -484,7 +503,7 @@
       font-weight:500; flex-shrink:0;
     }
     table.admin-table td:empty{display:none;}
-    table.admin-table tr.overdue td, table.admin-table tr.toVerify td,
+    table.admin-table tr.overdue td, table.admin-table tr.toVerify td, table.admin-table tr.noShow td,
     table.admin-table tr.done td{background:transparent;}
     table.admin-table tbody tr:hover td{background:transparent;}
 
@@ -497,7 +516,7 @@
     .filter-bar{gap:var(--s-2);}
     .filter-bar input[type="search"]{min-width:100%;}
     .filter-bar select{width:100%;}
-    .chip-row{width:100%;}
+    .chip-row{width:100%; flex-wrap:wrap;}
     .chip-row button{flex:1; padding:6px 4px;}
   }
 </style>
@@ -525,7 +544,7 @@
       <button data-role="teacher" class="active">老師</button>
       <button data-role="ta">助教</button>
       <button data-role="admin">管理職</button>
-      <button data-role="rules">規則說明</button>
+      <button data-role="rules">補課合作說明</button>
     </div>
     <div class="name-box">
       <span class="name-label" id="nameLabel">填表老師</span>
@@ -549,7 +568,7 @@
 
     <div class="callout">
       <b>送出前請先確認</b>：課本教材已備好給助教 ・ 前一天完成交接 ・ 已在班提醒學生時間與攜帶物品 ・ 補課後要查看紀錄並簽名。
-      完整內容看 <a data-goto="rules">規則說明</a>。
+      完整內容看 <a data-goto="rules">補課合作說明</a>。
     </div>
 
     <div class="panel">
@@ -590,7 +609,7 @@
         <div class="form-section">
           <div class="sec-head">補課安排</div>
 
-          <!-- 指派前先看一眼助教能做什麼，內容同「規則說明」的第一張卡 -->
+          <!-- 指派前先看一眼助教能做什麼，內容同「補課合作說明」的第一張卡 -->
           <div class="duty-reminder">
             <div class="dr-head">助教可以做的職責 <span>指派內容請落在這四型裡</span></div>
             <div class="dr-grid">
@@ -658,6 +677,7 @@
         <div class="chip-row" id="teacherStatusFilter">
           <button data-status="all" class="active">全部</button>
           <button data-status="toVerify">待我查核</button>
+          <button data-status="noShow">未到待改期</button>
           <button data-status="pending">待補課</button>
           <button data-status="overdue">逾期</button>
           <button data-status="done">已完成</button>
@@ -674,7 +694,7 @@
 
     <div class="callout">
       <b>補課前請先完成</b>：預備補課內容並向老師拿到課本資料 ・ 確認學生補課資訊 ・ 補課當天點名，未到或遲到要打電話給教學老師 ・ 補課後回傳資訊給家長。
-      職責範圍看 <a data-goto="rules">規則說明</a>。
+      職責範圍看 <a data-goto="rules">補課合作說明</a>。
     </div>
 
     <div class="panel">
@@ -702,6 +722,7 @@
           <button data-status="all" class="active">全部</button>
           <button data-status="pending">待補課</button>
           <button data-status="overdue">逾期</button>
+          <button data-status="noShow">未到</button>
           <button data-status="toVerify">待查核</button>
           <button data-status="done">已完成</button>
           <button data-status="cancelled">已取消</button>
@@ -714,7 +735,7 @@
           <thead>
             <tr>
               <th>狀態</th><th>缺課日期</th><th>學生</th><th>班級/導師</th><th>原因</th>
-              <th>指派內容</th><th>時段</th><th>助教</th><th>實際補課</th><th>驗收</th>
+              <th>指派內容</th><th>時段</th><th>助教</th><th>實際補課</th><th>點名</th><th>驗收</th>
               <th>家長已通知</th><th>老師查核</th><th>操作</th>
             </tr>
           </thead>
@@ -739,13 +760,14 @@
         </div>
         <div class="field"><label>助教姓名</label><input name="ta" required list="taNameOptions" autocomplete="off"></div>
         <datalist id="taNameOptions"></datalist>
+        <div class="field"><label>備註 <span class="hint">使用的輔導教室</span></label><input name="note" placeholder="例如：F-B Classroom" autocomplete="off"></div>
         <div class="field"><label>名額</label><input name="quota" type="number" value="4" min="1"></div>
         <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增／更新時段</button></div>
       </form>
     </div>
   </section>
 
-  <!-- ================= 規則說明 ================= -->
+  <!-- ================= 補課合作說明 ================= -->
   <section class="view" id="view-rules">
 
     <div class="callout">
