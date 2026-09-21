@@ -298,7 +298,7 @@
   .rc-title{font-weight:700; font-size:15px;}
   .rc-meta{font-size:12.5px; color:var(--ink-soft); margin-top:2px;}
   .rc-body{
-    display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
     gap:var(--s-1) var(--s-4); margin-top:var(--s-3);
     padding-top:var(--s-3); border-top:1px solid var(--line-soft);
   }
@@ -308,6 +308,8 @@
     flex-shrink:0; min-width:82px;
   }
   .kv span{white-space:pre-wrap;}
+  /* 長文字欄位佔整行，不要被擠在一欄裡一直斷行 */
+  .kv.wide{grid-column:1/-1;}
   .rc-actions{display:flex; gap:var(--s-2); flex-wrap:wrap; margin-top:var(--s-3);}
 
   .ta-form{display:none; margin-top:var(--s-4); padding-top:var(--s-4); border-top:1px dashed var(--line);}

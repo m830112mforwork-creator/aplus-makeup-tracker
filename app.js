@@ -1232,7 +1232,8 @@ function renderTaLists(){
 function recordCardHtml(r, mode){
   const status = computeStatus(r);
   const e = escapeHtml;
-  const kv = (label, value) => `<div class="kv"><b>${label}</b><span>${e(value || "-")}</span></div>`;
+  // wide = 這一列佔整張卡片的寬度（給會寫長句的欄位用，不然文字被擠成一欄一直斷行）
+  const kv = (label, value, wide) => `<div class="kv${wide ? " wide" : ""}"><b>${label}</b><span>${e(value || "-")}</span></div>`;
   return `
   <div class="record-card ${status}" data-id="${e(r.id)}">
     <div class="rc-head">
@@ -1247,18 +1248,18 @@ function recordCardHtml(r, mode){
       ${kv("缺課核心課程", r.coreCourse)}
       ${kv("課本", r.book)}
       ${kv("單元", r.unit)}
-      ${kv("指派補課內容", r.assignedContent)}
+      ${kv("指派補課內容", r.assignedContent, true)}
       ${kv("預計時長", r.plannedDuration)}
       ${kv("時段/負責人", slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}
-      ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`) : ``}
+      ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`, true) : ``}
       ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
-      ${r.lastNoShow ? kv("未到紀錄", `${r.lastNoShow.date} ${r.lastNoShow.slot || ""} 未到${r.lastNoShow.by ? `（${r.lastNoShow.by} 點名）` : ""}${r.lastNoShow.note ? `：${r.lastNoShow.note}` : ""}`) : ``}
+      ${r.lastNoShow ? kv("未到紀錄", `${r.lastNoShow.date} ${r.lastNoShow.slot || ""} 未到${r.lastNoShow.by ? `（${r.lastNoShow.by} 點名）` : ""}${r.lastNoShow.note ? `：${r.lastNoShow.note}` : ""}`, true) : ``}
       ${r.actualDate ? `
       ${kv("實際補課日期", r.actualDate)}
       ${kv("點名", r.attendance === "出席" ? "準時出席" : r.attendance)}
-      ${kv("驗收成果", r.result)}
+      ${kv("驗收成果", r.result, true)}
       ${kv("作業狀況", r.homeworkStatus)}
-      ${kv("助教備註", r.taNote)}
+      ${kv("助教備註", r.taNote, true)}
       ${kv("家長已通知", r.parentNotified ? "是" : "否")}
       ${kv("老師查核", r.teacherVerified
             ? `${r.verifiedBy || ""} 已簽名${r.verifiedAt ? `（${formatStamp(r.verifiedAt)}）` : ""}`
