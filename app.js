@@ -49,8 +49,11 @@ let auth = null;
 let unsubscribers = [];   // Firestore 監聽器，登出時要一起收掉
 let records = [];
 let roster = [];
-let sharedNames = [];          // 老師名單：全部人共用，存在 roster 集合的 __teacherNames 這份文件
-let namesMigrated = false;
+// 人員主檔：誰是英語總導師、誰是助教、在不在職。存在 roster 集合的 __people 這份文件，
+// 大家共用（Firestore 規則只開放 records / roster，所以借用 roster 放，用 kind 標記）
+let storedPeople = [];
+let legacyNames = [];          // 舊版只存名字的 __teacherNames，讀進來當英語總導師
+const PEOPLE_DOC_ID = "__people";
 const NAMES_DOC_ID = "__teacherNames";
 let state = { role: "teacher", name: "" };
 let selectedSlot = null; // {weekday, time, ta}
@@ -145,10 +148,11 @@ function startDataListeners(){
     onSnapshot(collection(db,"roster"), snap => {
       const docs = snap.docs.map(d => ({ id:d.id, ...d.data() }));
       // 名單那份文件用 kind 標記，別讓它跑進時段表
-      roster = docs.filter(d => d.kind !== "names");
-      sharedNames = uniqSorted(docs.find(d => d.id === NAMES_DOC_ID)?.names || []);
+      // 人員名單那幾份文件用 kind 標記，別讓它們跑進時段表
+      roster = docs.filter(d => !d.kind);
+      legacyNames = docs.find(d => d.id === NAMES_DOC_ID)?.names || [];
+      storedPeople = docs.find(d => d.id === PEOPLE_DOC_ID)?.people || [];
       loaded.roster = true;
-      migrateLocalNames();
       renderAll();
     }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
   );
@@ -159,7 +163,8 @@ function stopDataListeners(){
   unsubscribers = [];
   records = [];
   roster = [];
-  sharedNames = [];
+  storedPeople = [];
+  legacyNames = [];
   renderAll();
 }
 
@@ -557,34 +562,102 @@ function saveCustomName(name){
 function removeCustomName(name){
   try{ localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(loadCustomNames().filter(n=>n!==name))); }catch(_){}
 }
-// 名單存回 Firestore，這樣每台電腦、每位老師看到的是同一份
-async function saveSharedNames(list){
-  const names = uniqSorted(list);
-  if(db) return writeSafely(()=>setDoc(doc(db,"roster",NAMES_DOC_ID), { kind:"names", names }));
-  sharedNames = names;
+// 後台的人員設定是主檔；但紀錄、時段表、舊名單裡出現過的人一定要看得到，
+// 所以先從現有資料推出來，再讓後台的設定覆蓋上去——名字永遠不會憑空消失
+function peopleList(){
+  const map = new Map();
+  const ensure = raw => {
+    const n = String(raw || "").trim();
+    if(!n) return null;
+    if(!map.has(n)) map.set(n, { name:n, homeroom:false, ta:false, active:true, derived:true });
+    return map.get(n);
+  };
+  records.forEach(r=>{
+    const h = ensure(r.homeroomTeacher); if(h) h.homeroom = true;
+    const t = ensure(r.slotTA);          if(t) t.ta = true;
+  });
+  roster.forEach(s=>{ const p = ensure(s.ta); if(p) p.ta = true; });
+  legacyNames.forEach(n=>{ const p = ensure(n); if(p) p.homeroom = true; });
+  loadCustomNames().forEach(n=>{ const p = ensure(n); if(p) p.homeroom = true; });
+  storedPeople.forEach(sp=>{
+    const p = ensure(sp.name);
+    if(!p) return;
+    p.homeroom = !!sp.homeroom;
+    p.ta = !!sp.ta;
+    p.active = sp.active !== false;
+    p.derived = false;
+  });
+  return [...map.values()].sort((a,b)=>a.name.localeCompare(b.name, "zh-Hant"));
+}
+function findPerson(name){ return peopleList().find(p=>p.name === name) || null; }
+
+// 存回 Firestore：一律寫入完整名單（含自動帶出來的人），之後就以這份為準
+async function savePeople(list){
+  const clean = list
+    .map(p=>({ name:String(p.name || "").trim(), homeroom:!!p.homeroom, ta:!!p.ta, active:p.active !== false }))
+    .filter(p=>p.name);
+  if(db) return writeSafely(()=>setDoc(doc(db,"roster",PEOPLE_DOC_ID), { kind:"people", people:clean }));
+  storedPeople = clean;
   renderAll();
   return true;
 }
-// 舊版的名字只存在自己的瀏覽器裡，第一次連上時搬到共用名單
-async function migrateLocalNames(){
-  if(!db || namesMigrated) return;
-  namesMigrated = true;
-  const mine = loadCustomNames().filter(n => n && !sharedNames.includes(n));
-  if(mine.length) await saveSharedNames([...sharedNames, ...mine]);
-}
-function recordsUsingName(name){
-  return records.filter(r => r.homeroomTeacher === name || r.teachingTeacher === name || r.teacherName === name);
-}
 
-function taNameList(){ return uniqSorted(roster.filter(s=>s.ta).map(s=>s.ta)); }
-function teacherNameList(){
-  // 老師頁是給英語總導師看的：名單＝紀錄裡出現過的＋共用名單＋這台電腦自己加的
-  return uniqSorted([...records.map(r=>r.homeroomTeacher), ...sharedNames, ...loadCustomNames()]);
+// 這個名字被用在哪裡：紀錄的老師／助教欄位，以及時段表
+function recordsUsingName(name){
+  return records.filter(r =>
+    r.homeroomTeacher === name || r.teachingTeacher === name || r.teacherName === name || r.slotTA === name);
 }
+function slotsUsingName(name){ return roster.filter(s=>s.ta === name); }
+
+function taNameList(){ return peopleList().filter(p=>p.active && p.ta).map(p=>p.name); }
+function teacherNameList(){ return peopleList().filter(p=>p.active && p.homeroom).map(p=>p.name); }
 function namesForRole(role){
   if(role === "ta") return taNameList();
-  if(role === "admin") return uniqSorted([...teacherNameList(), ...taNameList()]);
+  if(role === "admin") return peopleList().filter(p=>p.active).map(p=>p.name);
   return teacherNameList();
+}
+
+// 改名：紀錄裡的老師／助教欄位、時段表的助教、人員名單一起更新。
+// 回傳 false＝取消或沒存到（錯誤訊息已經跳出來了）
+async function applyNameToData(oldName, newName){
+  const affected = recordsUsingName(oldName);
+  const slots = slotsUsingName(oldName);
+  for(const r of affected){
+    const fields = {};
+    if(r.homeroomTeacher === oldName) fields.homeroomTeacher = newName;
+    if(r.teachingTeacher === oldName) fields.teachingTeacher = newName;
+    if(r.teacherName === oldName)     fields.teacherName = newName;
+    if(r.slotTA === oldName)          fields.slotTA = newName;
+    if(!(await saveRecordFields(r.id, fields))) return false;
+  }
+  for(const slot of slots){
+    if(!(await saveRosterFields(slot.id, { ta:newName }))) return false;
+  }
+  return true;
+}
+
+// 改名字＝資料同步＋名單同步。改成已經存在的名字就視為合併成同一個人
+function mergedPeople(base, oldName, newName, patch){
+  const me     = base.find(p=>p.name === oldName) || { homeroom:false, ta:false, active:true };
+  const exists = base.find(p=>p.name === newName);
+  return base
+    .filter(p=>p.name !== oldName && p.name !== newName)
+    .concat([{
+      name: newName,
+      homeroom: patch ? patch.homeroom : (me.homeroom || !!exists?.homeroom),
+      ta:       patch ? patch.ta       : (me.ta       || !!exists?.ta),
+      active:   patch ? patch.active   : me.active !== false,
+    }]);
+}
+
+async function renamePerson(oldName, newName){
+  const base = peopleList();
+  if(!(await applyNameToData(oldName, newName))) return false;
+  if(!(await savePeople(mergedPeople(base, oldName, newName)))) return false;
+  removeCustomName(oldName);
+  saveCustomName(newName);
+  if(state.name === oldName) setName(newName);
+  return true;
 }
 
 function refreshNameField(){
@@ -594,9 +667,10 @@ function refreshNameField(){
   if(nameBox.hidden) return;
   nameLabel.textContent = hint.label;
   nameSelect.setAttribute("aria-label", `選擇你的身分：${hint.label}`);
-  // 助教名單由管理職的時段設定決定，不能在這裡加；✎ 管的是英語總導師名單，只出現在老師頁
-  nameAddBtn.hidden = state.role === "ta";
-  nameEditBtn.hidden = state.role !== "teacher";
+  // 老師頁和助教頁都可以新增／改名字；管理職請用「人員與身份」後台（可以設身份與在職）
+  const canEditNames = state.role === "teacher" || state.role === "ta";
+  nameAddBtn.hidden = !canEditNames;
+  nameEditBtn.hidden = !canEditNames;
   const names = namesForRole(state.role);
   const ready = loaded.records && loaded.roster;
 
@@ -613,8 +687,8 @@ function refreshNameField(){
       html += `<option value="${e(state.name)}">${e(state.name)}${suffix}</option>`;
     }
     // 選單裡只放人名，「新增名字」改成旁邊那顆 ＋ 按鈕
-    if(state.role === "ta"){
-      html += `<option disabled>名單沒有你？請管理職先到時段設定加入</option>`;
+    if(state.role === "ta" && !names.length){
+      html += `<option disabled>名單是空的，按旁邊的 ＋ 新增</option>`;
     }
     nameSelect.innerHTML = html;
   }
@@ -648,18 +722,22 @@ function closeNamesModal(){
 
 function openNamesModal(){
   namesBackdrop.classList.add("open");
+  document.getElementById("namesTitle").textContent =
+    state.role === "ta" ? "管理助教名單" : "管理英語總導師名單";
   renderNamesModal();
 }
 
 function renderNamesModal(){
   const e = escapeHtml;
-  const names = teacherNameList();
+  const names = namesForRole(state.role);
   namesList.innerHTML = names.length
     ? names.map(n=>{
-        const used = recordsUsingName(n).length;
+        const recs = recordsUsingName(n).length;
+        const slots = slotsUsingName(n).length;
+        const where = [recs && `${recs} 筆紀錄`, slots && `${slots} 個時段`].filter(Boolean).join("、");
         return `<div class="nm-row" data-name="${e(n)}">
           <input class="nm-input" value="${e(n)}" aria-label="名字">
-          <span class="nm-count">${used ? `${used} 筆紀錄` : "未使用"}</span>
+          <span class="nm-count">${where || "未使用"}</span>
           <button type="button" class="btn small nm-save" disabled>儲存</button>
           <button type="button" class="btn ghost small nm-del">刪除</button>
         </div>`;
@@ -706,29 +784,21 @@ async function saveNameRows(rows){
 
   const lines = pairs.map(p=>{
     const n = recordsUsingName(p.oldName).length;
-    return `・${p.oldName} → ${p.newName}（${n ? `${n} 筆紀錄` : "未使用"}）`;
+    const sl = slotsUsingName(p.oldName).length;
+    const where = [n && `${n} 筆紀錄`, sl && `${sl} 個時段`].filter(Boolean).join("、");
+    return `・${p.oldName} → ${p.newName}（${where || "未使用"}）`;
   }).join("\n");
   if(!confirm(
     `確定儲存${pairs.length > 1 ? `這 ${pairs.length} 個` : ""}名字的修改？\n\n${lines}\n\n` +
-    `紀錄裡的老師欄位（英語總導師、教學老師、登記者）會一起更新。\n` +
+    `紀錄裡的老師與助教欄位、時段設定會一起更新。\n` +
     `已經留下的查核簽名、點名紀錄不會被改。`
   )) return;
 
   let changed = 0;
   for(const { oldName, newName } of pairs){
-    const affected = recordsUsingName(oldName);
-    for(const r of affected){
-      const fields = {};
-      if(r.homeroomTeacher === oldName) fields.homeroomTeacher = newName;
-      if(r.teachingTeacher === oldName) fields.teachingTeacher = newName;
-      if(r.teacherName === oldName) fields.teacherName = newName;
-      if(!(await saveRecordFields(r.id, fields))){ renderNamesModal(); return; }   // 沒存到，錯誤訊息已經跳出來了
-    }
-    if(!(await saveSharedNames([...sharedNames.filter(n=>n!==oldName), newName]))){ renderNamesModal(); return; }
-    removeCustomName(oldName);
-    saveCustomName(newName);
-    if(state.name === oldName) setName(newName);
-    changed += affected.length;
+    const affected = recordsUsingName(oldName).length;
+    if(!(await renamePerson(oldName, newName))){ renderNamesModal(); return; }   // 沒存到，錯誤訊息已經跳出來了
+    changed += affected;
   }
   showToast(pairs.length > 1
     ? `已儲存 ${pairs.length} 個名字${changed ? `，同步更新 ${changed} 筆紀錄` : ""}`
@@ -738,12 +808,15 @@ async function saveNameRows(rows){
 
 async function deleteNameEntry(name){
   const used = recordsUsingName(name).length;
-  if(used){
-    alert(`「${name}」還有 ${used} 筆紀錄在使用，不能直接刪除。\n\n可以改成正確的名字（會一起更新那些紀錄），或先去修改那幾筆紀錄。`);
+  const slots = slotsUsingName(name).length;
+  if(used || slots){
+    const where = [used && `${used} 筆紀錄`, slots && `${slots} 個時段`].filter(Boolean).join("、");
+    alert(`「${name}」還有 ${where} 在使用，不能直接刪除。\n\n` +
+          `可以改成正確的名字（會一起更新），或到管理職的「人員與身份」把他改成停用。`);
     return;
   }
-  if(!confirm(`從名單移除「${name}」？沒有任何紀錄在用，不會影響資料。`)) return;
-  if(!(await saveSharedNames(sharedNames.filter(n=>n!==name)))) return;
+  if(!confirm(`從名單移除「${name}」？沒有任何紀錄或時段在用，不會影響資料。`)) return;
+  if(!(await savePeople(peopleList().filter(p=>p.name !== name)))) return;
   removeCustomName(name);
   if(state.name === name) setName("");
   showToast(`已移除「${name}」`);
@@ -766,12 +839,14 @@ function commitAddName(){
   const raw = nameAddInput.value.trim().replace(/\s+/g, " ");
   if(!raw){ endAddName(); return; }
   // 只差在大小寫就當成同一個人，直接用名單上的寫法，避免同一人出現兩種名字
-  const known = uniqSorted([...teacherNameList(), ...taNameList()]);
+  const known = peopleList().map(p=>p.name);
   const match = known.find(n=>n.toLowerCase() === raw.toLowerCase());
   const name = match || raw;
   if(!match){
     saveCustomName(name);
-    saveSharedNames([...sharedNames, name]);   // 加進共用名單，其他人也看得到
+    // 在哪一頁加的就給哪個身份；之後可以到管理職的「人員與身份」調整
+    const isTa = state.role === "ta";
+    savePeople([...peopleList(), { name, homeroom:!isTa, ta:isTa, active:true }]);
   }
   if(match && match !== raw) showToast(`名單上已經有「${match}」，已直接選取`);
   nameAdd.hidden = true;
@@ -1006,6 +1081,143 @@ document.getElementById("teacherForm").addEventListener("submit", e=>{
       ? `已送出；這筆的英語總導師是 ${otherHomeroom}，會出現在他的清單`
       : "已送出補課紀錄");
   }, "送出中…");
+});
+
+// ---------------- 管理職：人員與身份（後台）----------------
+// 這裡是名單的主檔：誰出現在老師頁的下拉、誰可以被指派補課，都由這裡的勾選決定
+function renderPeople(){
+  const wrap = document.getElementById("peopleEditor");
+  if(!wrap) return;
+  const e = escapeHtml;
+  const list = peopleList();
+  document.getElementById("peopleCount").textContent =
+    `${list.filter(p=>p.active).length} 人在職／共 ${list.length} 人`;
+
+  wrap.innerHTML = list.length ? `<div class="table-wrap"><table class="admin-table people-table">
+    <thead><tr><th>姓名</th><th>英語總導師</th><th>助教</th><th>在職</th><th>使用情形</th><th>操作</th></tr></thead>
+    <tbody>${list.map(p=>{
+      const recs = recordsUsingName(p.name).length;
+      const slots = slotsUsingName(p.name).length;
+      const where = [recs && `${recs} 筆紀錄`, slots && `${slots} 個時段`].filter(Boolean).join("、") || "—";
+      return `<tr data-person="${e(p.name)}">
+        <td data-label="姓名"><input class="p-name" value="${e(p.name)}" aria-label="姓名"></td>
+        <td data-label="英語總導師"><input type="checkbox" class="p-homeroom"${p.homeroom ? " checked" : ""} aria-label="英語總導師"></td>
+        <td data-label="助教"><input type="checkbox" class="p-ta"${p.ta ? " checked" : ""} aria-label="助教"></td>
+        <td data-label="在職"><input type="checkbox" class="p-active"${p.active ? " checked" : ""} aria-label="在職"></td>
+        <td data-label="使用情形">${e(where)}</td>
+        <td data-label="操作">
+          <button type="button" class="btn small p-save" disabled>儲存</button>
+          <button type="button" class="btn danger small p-del">刪除</button>
+        </td>
+      </tr>`;
+    }).join("")}</tbody></table></div>`
+    : '<div class="empty">還沒有任何人員，用下面的表單新增</div>';
+  refreshPeopleButtons();
+}
+
+function personRowValues(row){
+  return {
+    name: String(row.querySelector(".p-name").value || "").trim().replace(/\s+/g, " "),
+    homeroom: row.querySelector(".p-homeroom").checked,
+    ta: row.querySelector(".p-ta").checked,
+    active: row.querySelector(".p-active").checked,
+  };
+}
+function personRowDirty(row){
+  const orig = peopleList().find(p=>p.name === row.dataset.person);
+  const cur = personRowValues(row);
+  if(!orig) return true;
+  return cur.name !== orig.name || cur.homeroom !== orig.homeroom
+      || cur.ta !== orig.ta || cur.active !== orig.active;
+}
+function refreshPeopleButtons(){
+  document.querySelectorAll("#peopleEditor tbody tr").forEach(row=>{
+    const dirty = personRowDirty(row);
+    row.classList.toggle("dirty", dirty);
+    const btn = row.querySelector(".p-save");
+    if(btn) btn.disabled = !dirty;
+  });
+}
+
+async function savePersonRow(row){
+  const oldName = row.dataset.person;
+  const cur = personRowValues(row);
+  if(!cur.name){ showToast("姓名不能空白"); return; }
+  if(!cur.homeroom && !cur.ta && cur.active &&
+     !confirm(`${cur.name} 沒有勾任何身份，他不會出現在任何頁面的下拉選單，確定嗎？`)) return;
+
+  const base = peopleList();
+  if(cur.name !== oldName){
+    const recs = recordsUsingName(oldName).length;
+    const slots = slotsUsingName(oldName).length;
+    const where = [recs && `${recs} 筆紀錄`, slots && `${slots} 個時段`].filter(Boolean).join("、") || "沒有資料在用";
+    const merge = base.some(p=>p.name === cur.name) ? `\n\n名單上已經有「${cur.name}」，兩筆會合併成同一個人。` : "";
+    if(!confirm(`把「${oldName}」改成「${cur.name}」？\n\n${where}會一起更新。${merge}`)) return;
+    if(!(await applyNameToData(oldName, cur.name))) return;
+    removeCustomName(oldName);
+    saveCustomName(cur.name);
+    if(state.name === oldName) setName(cur.name);
+  }
+  if(!(await savePeople(mergedPeople(base, oldName, cur.name, cur)))) return;
+  showToast(`已儲存 ${cur.name}`);
+}
+
+async function deletePerson(name){
+  const recs = recordsUsingName(name).length;
+  const slots = slotsUsingName(name).length;
+  if(recs || slots){
+    const where = [recs && `${recs} 筆紀錄`, slots && `${slots} 個時段`].filter(Boolean).join("、");
+    alert(`「${name}」還有 ${where} 在使用，不能刪除。\n\n` +
+          `離職的話把「在職」取消勾選就好：他不會再出現在下拉選單，舊紀錄照樣保留。`);
+    return;
+  }
+  if(!confirm(`從名單刪除「${name}」？沒有任何紀錄或時段在用，不會影響資料。`)) return;
+  if(!(await savePeople(peopleList().filter(p=>p.name !== name)))) return;
+  removeCustomName(name);
+  if(state.name === name) setName("");
+  showToast(`已刪除 ${name}`);
+}
+
+const peopleEditor = document.getElementById("peopleEditor");
+peopleEditor.addEventListener("input", refreshPeopleButtons);
+peopleEditor.addEventListener("change", refreshPeopleButtons);
+peopleEditor.addEventListener("click", async e=>{
+  const saveBtn = e.target.closest(".p-save");
+  if(saveBtn){
+    const row = saveBtn.closest("tr");
+    await withBusy(saveBtn, ()=>savePersonRow(row), "儲存中…");
+    refreshPeopleButtons();
+    return;
+  }
+  const delBtn = e.target.closest(".p-del");
+  if(delBtn) await deletePerson(delBtn.closest("tr").dataset.person);
+});
+
+document.getElementById("peopleAddForm").addEventListener("submit", e=>{
+  e.preventDefault();
+  const form = e.target;
+  withBusy(form.querySelector('[type="submit"]'), async ()=>{
+    const name = String(form.elements.name.value || "").trim().replace(/\s+/g, " ");
+    if(!name){ showToast("請輸入姓名"); return; }
+    const homeroom = form.elements.homeroom.checked;
+    const ta = form.elements.ta.checked;
+    if(!homeroom && !ta){ showToast("請至少勾選一個身份"); return; }
+    const base = peopleList();
+    // 只差大小寫就當同一個人，沿用名單上的寫法
+    const known = base.find(p=>p.name.toLowerCase() === name.toLowerCase());
+    if(known){
+      if(!confirm(`名單上已經有「${known.name}」，要更新他的身份嗎？`)) return;
+      if(!(await savePeople(mergedPeople(base, known.name, known.name, {
+        homeroom: known.homeroom || homeroom, ta: known.ta || ta, active: true,
+      })))) return;
+      showToast(`已更新 ${known.name} 的身份`);
+    } else {
+      if(!(await savePeople([...base, { name, homeroom, ta, active:true }]))) return;
+      showToast(`已新增 ${name}`);
+    }
+    form.reset();
+    form.elements.homeroom.checked = true;
+  });
 });
 
 // ---------------- 管理職：時段設定 ----------------
@@ -1930,12 +2142,20 @@ function renderAdmin(){
     timeList.dataset.names = timeSuggest.join("|");
     timeList.innerHTML = timeSuggest.map(t=>`<option value="${e(t)}">`).join("");
   }
-  // 時段設定「助教姓名」欄的候選名單
-  const taList = document.getElementById("taNameOptions");
-  if(taList && taList.dataset.names !== taNames.join("|")){
-    taList.dataset.names = taNames.join("|");
-    taList.innerHTML = taNames.map(n=>`<option value="${e(n)}">`).join("");
+  // 時段設定的「助教」改成從人員名單挑，不再手打（避免 Jocelyn／jocelyn 兩種寫法）
+  // 時段可以指派給誰：只有在職、且身份勾了助教的人（上面的篩選則要含離職的，舊紀錄才篩得到）
+  const assignable = taNameList();
+  const rosterTa = document.getElementById("rosterTaSelect");
+  if(rosterTa && rosterTa.dataset.names !== assignable.join("|")){
+    const keep = rosterTa.value;
+    rosterTa.dataset.names = assignable.join("|");
+    rosterTa.innerHTML = assignable.length
+      ? `<option value="" disabled hidden>選擇助教</option>` + assignable.map(n=>`<option value="${e(n)}">${e(n)}</option>`).join("")
+      : `<option value="" disabled hidden>請先在上面新增助教</option>`;
+    rosterTa.value = assignable.includes(keep) ? keep : "";
   }
+
+  renderPeople();
 
   const shown = records.filter(matchesAdminFilter);
   const isFiltered = adminFilter.search || adminFilter.status !== "all" || adminFilter.ta;

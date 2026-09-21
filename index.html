@@ -552,7 +552,17 @@
   /* 改過還沒存的那一列標起來 */
   .nm-row.dirty{background:var(--gold-soft); border-radius:var(--r-sm);}
   .nm-row.dirty .nm-input{border-color:var(--gold);}
-  .roster-table tr.dirty{background:var(--gold-soft);}
+  .people-table tr.dirty, .roster-table tr.dirty{background:var(--gold-soft);}
+  .people-table input[type="checkbox"]{width:17px; height:17px; accent-color:var(--primary); cursor:pointer;}
+  .people-table .p-name{
+    width:100%; min-width:90px; border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:7px 9px; font-size:13.5px; color:var(--ink); background:#fff;
+  }
+  .panel-hint{font-size:12.5px; color:var(--ink-soft); line-height:1.7; margin:-4px 0 var(--s-3);}
+  .panel-hint b{color:var(--primary);}
+  .chk-row{display:flex; gap:var(--s-3); align-items:center; flex-wrap:wrap; padding-top:6px;}
+  .chk{display:flex; align-items:center; gap:6px; font-size:13.5px; cursor:pointer;}
+  .chk input{width:17px; height:17px; accent-color:var(--primary); cursor:pointer;}
   .roster-table tr.dirty input{border-color:var(--gold);}
   .modal textarea{
     width:100%; min-height:230px; border:1px solid var(--line); border-radius:var(--r-sm);
@@ -889,6 +899,23 @@
     </div>
 
     <div class="panel">
+      <h2>人員與身份 <span class="count" id="peopleCount"></span></h2>
+      <p class="panel-hint">身份決定他會出現在哪裡：<b>英語總導師</b>＝老師頁的身分下拉；<b>助教</b>＝助教頁的身分下拉，也是下面時段設定可以選的人。
+        取消「在職」的人不會再出現在任何下拉選單，但他的舊紀錄照樣保留。改名字會一併更新所有紀錄與時段設定。</p>
+      <div id="peopleEditor"></div>
+      <form id="peopleAddForm" class="grid" style="margin-top:var(--s-4);">
+        <div class="field"><label>姓名</label><input name="name" required autocomplete="off" placeholder="例如：Melody"></div>
+        <div class="field"><label>身份</label>
+          <div class="chk-row">
+            <label class="chk"><input type="checkbox" name="homeroom" checked> 英語總導師</label>
+            <label class="chk"><input type="checkbox" name="ta"> 助教</label>
+          </div>
+        </div>
+        <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增人員</button></div>
+      </form>
+    </div>
+
+    <div class="panel">
       <h2>助教 時段與名額設定</h2>
       <div id="rosterEditor"></div>
       <form id="rosterAddForm" class="grid" style="margin-top:var(--s-4);">
@@ -902,8 +929,9 @@
           <input name="time" required list="timeOptions" placeholder="例如：3:00-4:00" autocomplete="off">
           <datalist id="timeOptions"></datalist>
         </div>
-        <div class="field"><label>助教姓名</label><input name="ta" required list="taNameOptions" autocomplete="off"></div>
-        <datalist id="taNameOptions"></datalist>
+        <div class="field"><label>助教 <span class="hint">從上面的人員名單挑</span></label>
+          <select name="ta" id="rosterTaSelect" required></select>
+        </div>
         <div class="field"><label>備註 <span class="hint">使用的輔導教室</span></label><input name="note" placeholder="例如：F-B Classroom" autocomplete="off"></div>
         <div class="field"><label>名額</label><input name="quota" type="number" value="4" min="1"></div>
         <div class="field" style="align-self:end;"><button type="submit" class="btn small">新增／更新時段</button></div>
@@ -1057,8 +1085,9 @@
 
 <div class="modal-backdrop" id="namesBackdrop">
   <div class="modal">
-    <h3>管理英語總導師名單</h3>
-    <p class="nm-sub">改名會一併更新紀錄裡的老師欄位（英語總導師、教學老師、登記者）。名單是大家共用的，改了每台電腦都會同步。</p>
+    <h3 id="namesTitle">管理名單</h3>
+    <p class="nm-sub">改名會一併更新所有紀錄與時段設定。名單是大家共用的，改了每台電腦都會同步。
+      要設定身份（英語總導師／助教）或把離職的人停用，請到「管理職 → 人員與身份」。</p>
     <div id="namesList"></div>
     <div class="modal-actions">
       <button type="button" class="btn ghost small" id="namesClose">關閉</button>
@@ -1069,6 +1098,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script type="module" src="./app.js?v=20260921e"></script>
+<script type="module" src="./app.js?v=20260921g"></script>
 </body>
 </html>
