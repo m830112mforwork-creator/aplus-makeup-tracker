@@ -240,9 +240,12 @@
   }
   .week-table td{padding:2px; vertical-align:top;}
   .wk-item{
+    display:block; width:100%; font-family:inherit; cursor:pointer;
     background:#fff; border:1px solid var(--line); border-radius:6px;
     padding:6px 8px; margin-bottom:4px; text-align:left; line-height:1.4;
+    transition:border-color .15s, box-shadow .15s;
   }
+  .wk-item:hover{border-color:var(--primary); box-shadow:0 1px 6px rgba(61,52,102,.15);}
   .wk-item:last-child{margin-bottom:0;}
   .wk-item b{display:block; font-size:12.5px; font-weight:700; color:var(--ink);}
   .wk-item small{display:block; font-size:10.5px; color:var(--ink-soft); margin-top:1px;}
@@ -286,6 +289,10 @@
   .record-card.cancelled{border-left-color:#C9C3B6; background:#FBFAF7;}
   .record-card.cancelled .rc-title{color:var(--ink-soft); text-decoration:line-through;}
   .record-card.noShow{border-left-color:var(--warn); background:#FFF8F6;}
+  /* 從本週總覽點學生跳過來時，卡片閃一下讓人找得到 */
+  @keyframes cardFlash{ 0%{box-shadow:0 0 0 3px var(--gold);} 100%{box-shadow:0 0 0 3px rgba(184,144,46,0);} }
+  .record-card.flash-card{animation:cardFlash 1.6s ease-out;}
+  @media (prefers-reduced-motion:reduce){ .record-card.flash-card{animation:none; box-shadow:0 0 0 3px var(--gold);} }
   .rc-alert{
     margin-top:var(--s-3); background:var(--warn-soft); border:1px solid #F0CFC6; color:#8C3623;
     border-radius:var(--r-sm); padding:8px 12px; font-size:12.5px; line-height:1.6;
@@ -717,7 +724,7 @@
 
           <div style="margin-top:var(--s-4);">
             <label style="display:block; font-size:12px; color:var(--ink-soft); font-weight:500; margin-bottom:var(--s-2);">
-              選擇補課日期與時段 <span style="color:var(--ink-faint); font-weight:400;">（名額按當天計算，額滿無法選取；可切換週次）</span>
+              選擇補課日期與時段 <span style="color:var(--ink-faint); font-weight:400;">（最快只能排明天，要留一天給助教交接；名額按當天計算，額滿無法選取；可切換週次）</span>
             </label>
             <div id="slotPicker"></div>
           </div>

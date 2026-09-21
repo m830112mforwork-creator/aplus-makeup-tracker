@@ -334,6 +334,8 @@ function slotLabel(dayKey, time){
   return `${WEEKDAY_LABEL[dayKey] || dayKey || ""} ${time || ""}`.trim();
 }
 function slotText(dayKey, time, ta){ return `${slotLabel(dayKey, time)}（${ta || "-"}）`; }
+// 補課合作說明：老師要前一天完成交接，所以最快只能排明天
+function earliestSlotDate(){ return addDays(todayStr(), 1); }
 // 時段備註（通常寫使用的輔導教室）。從時段設定即時查，管理職改了教室，舊紀錄也會顯示新的
 function slotNote(dayKey, time, ta){
   return (roster.find(s=>s.ta && s.weekday===weekdayOf(dayKey) && s.time===time && s.ta===ta)?.note || "").trim();
@@ -673,18 +675,19 @@ function renderSlotGrid(wrap, opts){
         return;
       }
       const past = dt < today;
+      const isToday = dt === today;   // 今天仍然顯示，但不能排（要留一天給助教交接）
       // 一格裡可能有多位助教，每位各一顆按鈕
       const buttons = slots.map(slot=>{
         const remain = remainingForSlot(dt, t, slot.ta, excludeId);
         const isSel = selected && selected.date===dt && selected.time===t && selected.ta===slot.ta;
         const cls = isSel ? "slot-cell selected"
-                  : past ? "slot-cell unavailable"
+                  : (past || isToday) ? "slot-cell unavailable"
                   : remain <= 0 ? "slot-cell full" : "slot-cell";
-        const disabled = !isSel && (past || remain <= 0);
+        const disabled = !isSel && (past || isToday || remain <= 0);
         return `<button type="button" class="${cls}" ${disabled ? "disabled" : ""}
           data-date="${dt}" data-w="${weekdays[i]}" data-t="${escapeHtml(t)}" data-ta="${escapeHtml(slot.ta)}"
           ${slot.note ? `title="${escapeHtml(slot.note)}"` : ""}
-        >${escapeHtml(slot.ta)}${slot.note ? `<small class="slot-note">${escapeHtml(slot.note)}</small>` : ""}<small>${past ? "已過" : `剩 ${Math.max(remain,0)} 名`}</small></button>`;
+        >${escapeHtml(slot.ta)}${slot.note ? `<small class="slot-note">${escapeHtml(slot.note)}</small>` : ""}<small>${past ? "已過" : isToday ? "今天不可排" : `剩 ${Math.max(remain,0)} 名`}</small></button>`;
       }).join("");
       html += `<td><div class="slot-multi">${buttons}</div></td>`;
     });
@@ -717,9 +720,7 @@ function renderSlotPicker(){
       form.elements.slotTime.value = slot.time;
       form.elements.slotTA.value = slot.ta;
       renderSlotPicker();
-      // 補課合作說明：老師要前一天完成交接，排今天會來不及
-      const sameDay = slot.date === todayStr() ? "　⚠ 補課就在今天，記得前一天要完成交接" : "";
-      document.getElementById("teacherFormHint").textContent = `已選：${slotTextWithNote(slot.date, slot.time, slot.ta)}${sameDay}`;
+      document.getElementById("teacherFormHint").textContent = `已選：${slotTextWithNote(slot.date, slot.time, slot.ta)}`;
     },
   });
 }
@@ -785,6 +786,10 @@ document.getElementById("teacherForm").addEventListener("submit", e=>{
     const data = Object.fromEntries(new FormData(form).entries());
     if(data.absenceDate && data.slotDate < data.absenceDate){
       showToast("補課日期比缺課日期還早，請確認"); return;
+    }
+    if(data.slotDate < earliestSlotDate()){
+      showToast("補課最快只能排到明天，要留一天給助教交接");
+      return;
     }
     // 送出前再算一次名額：挑完時段到按送出之間，別人可能剛好排走最後一個位子
     if(remainingForSlot(data.slotDate, data.slotTime, data.slotTA) <= 0){
@@ -1157,7 +1162,7 @@ function renderTaWeek(){
         html += `<td>${list.length ? list.map(r=>{
           const st = computeStatus(r);
           const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
-          return `<div class="wk-item ${st}"><b>${e(who)}</b><small>${statusLabel(st)}${taWeekAllTas ? `・${e(r.slotTA)}` : ""}</small></div>`;
+          return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${statusLabel(st)}${taWeekAllTas ? `・${e(r.slotTA)}` : ""}</small></button>`;
         }).join("") : '<div class="wk-empty">—</div>'}</td>`;
       });
       html += '</tr>';
@@ -1172,6 +1177,32 @@ function renderTaWeek(){
       renderTaWeek();
     });
   });
+  wrap.querySelectorAll("[data-rec]").forEach(btn=>{
+    btn.addEventListener("click", ()=>focusTaRecordCard(btn.dataset.rec));
+  });
+}
+
+// 總覽點了某位學生 → 捲到下面那張卡片並閃一下
+function focusTaRecordCard(id){
+  const r = records.find(x=>x.id === id);
+  if(!r) return;
+  if(r.slotTA !== state.name){
+    // 下面的清單只會有指派給自己的紀錄
+    showToast(`這是 ${r.slotTA} 的補課，下面的清單只會列出指派給你的`);
+    return;
+  }
+  const find = () => document.querySelector(`#view-ta .record-card[data-id="${CSS.escape(id)}"]`);
+  if(!find()){
+    // 清單有分頁，卡片可能還沒畫出來，先全部展開
+    if(r.actualDate) taDoneShown = Infinity; else taPendingShown = Infinity;
+    renderTaLists();
+  }
+  const card = find();
+  if(!card) return;
+  card.scrollIntoView({ behavior:"smooth", block:"center" });
+  card.classList.remove("flash-card");
+  void card.offsetWidth;            // 讓動畫可以重播
+  card.classList.add("flash-card");
 }
 
 document.getElementById("taWeekAll").addEventListener("change", e=>{
@@ -1519,6 +1550,9 @@ document.getElementById("editSave").addEventListener("click", e=>{
       }
       if(fields.absenceDate && s.date < fields.absenceDate){
         showToast("補課日期比缺課日期還早，請確認"); return;
+      }
+      if(s.date < earliestSlotDate()){
+        showToast("補課最快只能排到明天，要留一天給助教交接"); return;
       }
       Object.assign(fields, {
         slotDate: s.date, slotWeekday: s.weekday, slotTime: s.time, slotTA: s.ta,
