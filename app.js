@@ -634,9 +634,17 @@ nameAddBtn.addEventListener("click", startAddName);
 // ---------------- 管理名單（改名、刪除）----------------
 const namesBackdrop = document.getElementById("namesBackdrop");
 const namesList = document.getElementById("namesList");
+const namesSaveAll = document.getElementById("namesSaveAll");
 document.getElementById("nameEditBtn").addEventListener("click", openNamesModal);
-document.getElementById("namesClose").addEventListener("click", ()=>namesBackdrop.classList.remove("open"));
-namesBackdrop.addEventListener("click", e=>{ if(e.target === namesBackdrop) namesBackdrop.classList.remove("open"); });
+namesSaveAll.addEventListener("click", ()=>saveNameRows(nmDirtyRows()));
+document.getElementById("namesClose").addEventListener("click", closeNamesModal);
+namesBackdrop.addEventListener("click", e=>{ if(e.target === namesBackdrop) closeNamesModal(); });
+
+function closeNamesModal(){
+  // 改了沒存就關掉，等於白改，先問一聲
+  if(nmDirtyRows().length && !confirm("有還沒儲存的名字修改，確定關閉？")) return;
+  namesBackdrop.classList.remove("open");
+}
 
 function openNamesModal(){
   namesBackdrop.classList.add("open");
@@ -652,7 +660,7 @@ function renderNamesModal(){
         return `<div class="nm-row" data-name="${e(n)}">
           <input class="nm-input" value="${e(n)}" aria-label="名字">
           <span class="nm-count">${used ? `${used} 筆紀錄` : "未使用"}</span>
-          <button type="button" class="btn ghost small nm-save">改名</button>
+          <button type="button" class="btn small nm-save" disabled>儲存</button>
           <button type="button" class="btn ghost small nm-del">刪除</button>
         </div>`;
       }).join("")
@@ -660,37 +668,71 @@ function renderNamesModal(){
 
   namesList.querySelectorAll(".nm-row").forEach(row=>{
     const oldName = row.dataset.name;
-    row.querySelector(".nm-save").addEventListener("click", ()=>applyRename(oldName, row.querySelector(".nm-input").value));
+    const input = row.querySelector(".nm-input");
+    row.querySelector(".nm-save").addEventListener("click", ()=>saveNameRows([row]));
     row.querySelector(".nm-del").addEventListener("click", ()=>deleteNameEntry(oldName));
-    row.querySelector(".nm-input").addEventListener("keydown", ev=>{
-      if(ev.key === "Enter"){ ev.preventDefault(); applyRename(oldName, ev.target.value); }
+    input.addEventListener("input", refreshNamesButtons);
+    input.addEventListener("keydown", ev=>{
+      if(ev.key === "Enter"){ ev.preventDefault(); saveNameRows([row]); }
     });
   });
+  refreshNamesButtons();
 }
 
-async function applyRename(oldName, rawNew){
-  const newName = String(rawNew || "").trim().replace(/\s+/g, " ");
-  if(!newName){ showToast("名字不能空白"); return; }
-  if(newName === oldName){ showToast("名字沒有改變"); return; }
-  const affected = recordsUsingName(oldName);
+function nmNewName(row){ return String(row.querySelector(".nm-input").value || "").trim().replace(/\s+/g, " "); }
+function nmDirtyRows(){
+  return [...namesList.querySelectorAll(".nm-row")].filter(row=>{
+    const v = nmNewName(row);
+    return v && v !== row.dataset.name;
+  });
+}
+// 改了才亮起「儲存」，沒改就是灰的——不用猜到底存了沒
+function refreshNamesButtons(){
+  const dirty = nmDirtyRows();
+  namesList.querySelectorAll(".nm-row").forEach(row=>{
+    const isDirty = dirty.includes(row);
+    row.classList.toggle("dirty", isDirty);
+    row.querySelector(".nm-save").disabled = !isDirty;
+  });
+  namesSaveAll.disabled = dirty.length === 0;
+  namesSaveAll.textContent = dirty.length > 1 ? `儲存全部（${dirty.length}）` : "儲存全部";
+}
+
+// 一次確認、一次寫入，改幾個名字都只問一次
+async function saveNameRows(rows){
+  const pairs = rows.map(row=>({ oldName: row.dataset.name, newName: nmNewName(row) }))
+                    .filter(p=>p.newName && p.newName !== p.oldName);
+  if(!pairs.length){ showToast("名字沒有改變"); return; }
+
+  const lines = pairs.map(p=>{
+    const n = recordsUsingName(p.oldName).length;
+    return `・${p.oldName} → ${p.newName}（${n ? `${n} 筆紀錄` : "未使用"}）`;
+  }).join("\n");
   if(!confirm(
-    `把「${oldName}」改成「${newName}」？\n\n` +
-    `會一併更新 ${affected.length} 筆紀錄裡的老師欄位（英語總導師、教學老師、登記者）。\n` +
+    `確定儲存${pairs.length > 1 ? `這 ${pairs.length} 個` : ""}名字的修改？\n\n${lines}\n\n` +
+    `紀錄裡的老師欄位（英語總導師、教學老師、登記者）會一起更新。\n` +
     `已經留下的查核簽名、點名紀錄不會被改。`
   )) return;
 
-  for(const r of affected){
-    const fields = {};
-    if(r.homeroomTeacher === oldName) fields.homeroomTeacher = newName;
-    if(r.teachingTeacher === oldName) fields.teachingTeacher = newName;
-    if(r.teacherName === oldName) fields.teacherName = newName;
-    if(!(await saveRecordFields(r.id, fields))) return;   // 沒存到，錯誤訊息已經跳出來了
+  let changed = 0;
+  for(const { oldName, newName } of pairs){
+    const affected = recordsUsingName(oldName);
+    for(const r of affected){
+      const fields = {};
+      if(r.homeroomTeacher === oldName) fields.homeroomTeacher = newName;
+      if(r.teachingTeacher === oldName) fields.teachingTeacher = newName;
+      if(r.teacherName === oldName) fields.teacherName = newName;
+      if(!(await saveRecordFields(r.id, fields))){ renderNamesModal(); return; }   // 沒存到，錯誤訊息已經跳出來了
+    }
+    if(!(await saveSharedNames([...sharedNames.filter(n=>n!==oldName), newName]))){ renderNamesModal(); return; }
+    removeCustomName(oldName);
+    saveCustomName(newName);
+    if(state.name === oldName) setName(newName);
+    changed += affected.length;
   }
-  if(!(await saveSharedNames([...sharedNames.filter(n=>n!==oldName), newName]))) return;
-  removeCustomName(oldName);
-  saveCustomName(newName);
-  if(state.name === oldName) setName(newName);
-  showToast(affected.length ? `已改成「${newName}」，同步更新 ${affected.length} 筆紀錄` : `已改成「${newName}」`);
+  showToast(pairs.length > 1
+    ? `已儲存 ${pairs.length} 個名字${changed ? `，同步更新 ${changed} 筆紀錄` : ""}`
+    : `已改成「${pairs[0].newName}」${changed ? `，同步更新 ${changed} 筆紀錄` : ""}`);
   renderNamesModal();
 }
 
@@ -1959,7 +2001,10 @@ function renderAdmin(){
           <td data-label="備註"><input class="note-input" data-note="${e(s.id)}" value="${e(s.note || "")}" placeholder="例如：F-B Classroom" aria-label="備註"></td>
           <td data-label="名額"><input type="number" min="1" class="q-input" data-quota="${e(s.id)}" value="${e(s.quota)}" aria-label="名額"></td>
           <td data-label="之後已排">${upcoming ? `${upcoming} 位` : "-"}</td>
-          <td data-label="操作"><button type="button" class="btn danger small" data-del-slot="${e(s.id)}">刪除</button></td>
+          <td data-label="操作">
+            <button type="button" class="btn small" data-save-slot="${e(s.id)}" disabled>儲存</button>
+            <button type="button" class="btn danger small" data-del-slot="${e(s.id)}">刪除</button>
+          </td>
         </tr>`;
       }).join("")}
       </tbody></table></div>`;
@@ -1973,56 +2018,77 @@ document.getElementById("adminTableBody").addEventListener("click", e=>{
 });
 
 const rosterEditor = document.getElementById("rosterEditor");
-rosterEditor.addEventListener("change", async e=>{
-  const timeInput = e.target.closest("[data-time]");
-  if(timeInput){
-    const slot = roster.find(s=>s.id===timeInput.dataset.time);
-    if(!slot) return;
-    const time = normalizeTime(timeInput.value);
-    if(!time){ showToast("時段請寫成「開始-結束」，例如 3:00-4:00"); timeInput.value = slot.time; return; }
-    if(time === slot.time){ timeInput.value = slot.time; return; }
-    const dayName = WEEKDAY_LABEL[slot.weekday] || slot.weekday;
-    if(roster.some(x=>x.id!==slot.id && x.ta===slot.ta && x.weekday===slot.weekday && x.time===time)){
-      showToast(`${slot.ta} 在${dayName} ${time} 已經有時段了`);
-      timeInput.value = slot.time;
-      return;
-    }
-    // 之後已經排進這個時段的學生要跟著改到新時間；已經補完課的紀錄保留當時的時間
-    const upcoming = upcomingInSlot(slot);
-    if(upcoming.length && !confirm(
-      `把 ${slot.ta} 每${dayName} ${slot.time} 改成 ${time}？\n\n` +
-      `之後已經排了 ${upcoming.length} 位學生，會一起改到新的時間；已經補完課的紀錄維持原本的時間。\n` +
-      `改完記得通知教學部和學生。`
-    )){ timeInput.value = slot.time; return; }
-    if(!(await saveRosterFields(slot.id, { time }))){ timeInput.value = slot.time; return; }
-    for(const r of upcoming){
-      if(!(await saveRecordFields(r.id, { slotTime: time }))) return;
-    }
-    showToast(upcoming.length ? `時段已改為 ${time}，${upcoming.length} 位學生一併更新` : `時段已改為 ${time}`);
-    return;
+
+// 這一列有沒有還沒存的修改
+function rosterRowDirty(row){
+  const slot = roster.find(s=>s.id === row.querySelector("[data-time]")?.dataset.time);
+  if(!slot) return false;
+  const t = normalizeTime(row.querySelector("[data-time]").value) || row.querySelector("[data-time]").value.trim();
+  const note = row.querySelector("[data-note]").value.trim();
+  const quota = Math.floor(Number(row.querySelector("[data-quota]").value));
+  return t !== slot.time || note !== (slot.note || "") || quota !== Number(slot.quota);
+}
+function refreshRosterButtons(){
+  rosterEditor.querySelectorAll("tbody tr").forEach(row=>{
+    const btn = row.querySelector("[data-save-slot]");
+    if(!btn) return;
+    const dirty = rosterRowDirty(row);
+    btn.disabled = !dirty;
+    row.classList.toggle("dirty", dirty);
+  });
+}
+rosterEditor.addEventListener("input", refreshRosterButtons);
+
+// 三個欄位各自的檢查與存檔：離開欄位（change）會自動跑，按「儲存」也是跑這幾個。
+// 回傳 true＝已存好或本來就沒改，false＝取消或沒存到（錯誤訊息已經跳出來了）
+async function applySlotTime(timeInput){
+  const slot = roster.find(s=>s.id===timeInput.dataset.time);
+  if(!slot) return true;
+  const time = normalizeTime(timeInput.value);
+  if(!time){ showToast("時段請寫成「開始-結束」，例如 3:00-4:00"); timeInput.value = slot.time; return false; }
+  if(time === slot.time){ timeInput.value = slot.time; return true; }
+  const dayName = WEEKDAY_LABEL[slot.weekday] || slot.weekday;
+  if(roster.some(x=>x.id!==slot.id && x.ta===slot.ta && x.weekday===slot.weekday && x.time===time)){
+    showToast(`${slot.ta} 在${dayName} ${time} 已經有時段了`);
+    timeInput.value = slot.time;
+    return false;
   }
-  const noteInput = e.target.closest("[data-note]");
-  if(noteInput){
-    const slot = roster.find(s=>s.id===noteInput.dataset.note);
-    if(!slot) return;
-    const note = noteInput.value.trim();
-    if(note === (slot.note || "")) return;
-    // 同一位助教的其他時段（助教通常統一用同一間教室）
-    const others = roster.filter(x=>x.ta===slot.ta && x.id!==slot.id && (x.note || "") !== note);
-    if(!(await saveRosterFields(slot.id, { note }))){ noteInput.value = slot.note || ""; return; }
-    if(others.length && confirm(`${slot.ta} 還有 ${others.length} 個時段的備註不一樣，要一起改成「${note || "（空白）"}」嗎？`)){
-      for(const o of others){ if(!(await saveRosterFields(o.id, { note }))) return; }
-    }
-    showToast(note ? `備註已更新：${note}` : "已清除備註");
-    return;
+  // 之後已經排進這個時段的學生要跟著改到新時間；已經補完課的紀錄保留當時的時間
+  const upcoming = upcomingInSlot(slot);
+  if(upcoming.length && !confirm(
+    `把 ${slot.ta} 每${dayName} ${slot.time} 改成 ${time}？\n\n` +
+    `之後已經排了 ${upcoming.length} 位學生，會一起改到新的時間；已經補完課的紀錄維持原本的時間。\n` +
+    `改完記得通知教學部和學生。`
+  )){ timeInput.value = slot.time; return false; }
+  if(!(await saveRosterFields(slot.id, { time }))){ timeInput.value = slot.time; return false; }
+  for(const r of upcoming){
+    if(!(await saveRecordFields(r.id, { slotTime: time }))) return false;
   }
-  const input = e.target.closest("[data-quota]");
-  if(!input) return;
+  showToast(upcoming.length ? `時段已改為 ${time}，${upcoming.length} 位學生一併更新` : `時段已改為 ${time}`);
+  return true;
+}
+
+async function applySlotNote(noteInput){
+  const slot = roster.find(s=>s.id===noteInput.dataset.note);
+  if(!slot) return true;
+  const note = noteInput.value.trim();
+  if(note === (slot.note || "")) return true;
+  // 同一位助教的其他時段（助教通常統一用同一間教室）
+  const others = roster.filter(x=>x.ta===slot.ta && x.id!==slot.id && (x.note || "") !== note);
+  if(!(await saveRosterFields(slot.id, { note }))){ noteInput.value = slot.note || ""; return false; }
+  if(others.length && confirm(`${slot.ta} 還有 ${others.length} 個時段的備註不一樣，要一起改成「${note || "（空白）"}」嗎？`)){
+    for(const o of others){ if(!(await saveRosterFields(o.id, { note }))) return false; }
+  }
+  showToast(note ? `備註已更新：${note}` : "已清除備註");
+  return true;
+}
+
+async function applySlotQuota(input){
   const slot = roster.find(s=>s.id===input.dataset.quota);
-  if(!slot) return;
+  if(!slot) return true;
   const quota = Math.floor(Number(input.value));
-  if(!(quota >= 1)){ showToast("名額至少要 1"); input.value = slot.quota; return; }
-  if(quota === Number(slot.quota)) return;
+  if(!(quota >= 1)){ showToast("名額至少要 1"); input.value = slot.quota; return false; }
+  if(quota === Number(slot.quota)) return true;
   // 名額按天算：找出之後排最多人的那一天，名額改得比它少那天就會超額
   const perDay = {};
   upcomingInSlot(slot).forEach(r=>{ perDay[r.slotDate] = (perDay[r.slotDate] || 0) + 1; });
@@ -2030,11 +2096,35 @@ rosterEditor.addEventListener("change", async e=>{
   if(quota < busiest && !confirm(
     `${slotText(busiestDay, slot.time, slot.ta)} 已經排了 ${busiest} 位學生，名額改成 ${quota} 會超額。\n\n` +
     `已經排進來的學生不受影響，只是那天老師就選不到這個時段了。確定要改？`
-  )){ input.value = slot.quota; return; }
-  if(!(await saveRosterFields(slot.id, { quota }))){ input.value = slot.quota; return; }
+  )){ input.value = slot.quota; return false; }
+  if(!(await saveRosterFields(slot.id, { quota }))){ input.value = slot.quota; return false; }
   showToast(`名額已改為 ${quota}`);
+  return true;
+}
+
+rosterEditor.addEventListener("change", async e=>{
+  const timeInput = e.target.closest("[data-time]");
+  if(timeInput){ await applySlotTime(timeInput); refreshRosterButtons(); return; }
+  const noteInput = e.target.closest("[data-note]");
+  if(noteInput){ await applySlotNote(noteInput); refreshRosterButtons(); return; }
+  const quotaInput = e.target.closest("[data-quota]");
+  if(quotaInput){ await applySlotQuota(quotaInput); refreshRosterButtons(); }
 });
 rosterEditor.addEventListener("click", async e=>{
+  const saveBtn = e.target.closest("[data-save-slot]");
+  if(saveBtn){
+    const row = saveBtn.closest("tr");
+    // 點按鈕時輸入框會先失焦、change 可能已經存掉了，這裡把三個欄位都再跑一次（沒改的會直接跳過）
+    await withBusy(saveBtn, async ()=>{
+      const before = rosterRowDirty(row);
+      const okTime  = await applySlotTime(row.querySelector("[data-time]"));
+      const okNote  = okTime  && await applySlotNote(row.querySelector("[data-note]"));
+      const okQuota = okNote  && await applySlotQuota(row.querySelector("[data-quota]"));
+      if(okTime && okNote && okQuota && !before) showToast("已經是最新的了");
+    }, "儲存中…");
+    refreshRosterButtons();   // withBusy 結束時會把按鈕解除停用，狀態要在它之後重算
+    return;
+  }
   const btn = e.target.closest("[data-del-slot]");
   if(!btn) return;
   const slot = roster.find(s=>s.id===btn.dataset.delSlot);

@@ -549,6 +549,11 @@
     padding:7px 9px; font-size:13.5px; color:var(--ink); background:#fff;
   }
   .nm-count{font-size:11.5px; color:var(--ink-faint); white-space:nowrap; min-width:54px; text-align:right;}
+  /* 改過還沒存的那一列標起來 */
+  .nm-row.dirty{background:var(--gold-soft); border-radius:var(--r-sm);}
+  .nm-row.dirty .nm-input{border-color:var(--gold);}
+  .roster-table tr.dirty{background:var(--gold-soft);}
+  .roster-table tr.dirty input{border-color:var(--gold);}
   .modal textarea{
     width:100%; min-height:230px; border:1px solid var(--line); border-radius:var(--r-sm);
     padding:13px; font-size:13.5px; line-height:1.75; white-space:pre-wrap;
@@ -1056,13 +1061,14 @@
     <p class="nm-sub">改名會一併更新紀錄裡的老師欄位（英語總導師、教學老師、登記者）。名單是大家共用的，改了每台電腦都會同步。</p>
     <div id="namesList"></div>
     <div class="modal-actions">
-      <button type="button" class="btn small" id="namesClose">關閉</button>
+      <button type="button" class="btn ghost small" id="namesClose">關閉</button>
+      <button type="button" class="btn small" id="namesSaveAll" disabled>儲存全部</button>
     </div>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<script type="module" src="./app.js?v=20260921d"></script>
+<script type="module" src="./app.js?v=20260921e"></script>
 </body>
 </html>
