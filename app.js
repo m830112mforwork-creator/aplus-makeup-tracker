@@ -1101,7 +1101,86 @@ function restoreTaFormState(snapshot){
   });
 }
 
+// ---------------- 助教：本週補課總覽 ----------------
+// 助教要能一眼看到這一週每天各時段有誰要來補課，不用一張一張卡片翻。
+let taWeekStart = null;      // 目前顯示哪一週（該週週一的日期）
+let taWeekAllTas = false;    // false = 只看指派給自己的；true = 全部助教（互相支援時用）
+
+function renderTaWeek(){
+  const wrap = document.getElementById("taWeek");
+  const badge = document.getElementById("taWeekCount");
+  if(!wrap) return;
+  if(!taWeekStart) taWeekStart = mondayOf(todayStr());
+
+  if(!state.name){
+    wrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字</div>';
+    badge.textContent = "";
+    return;
+  }
+
+  const today = todayStr();
+  const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
+  const dates = weekdays.map((_, i)=>addDays(taWeekStart, i));
+  const inWeek = records.filter(r=>
+    !r.cancelled && r.slotDate && dates.includes(r.slotDate) &&
+    (taWeekAllTas || r.slotTA === state.name));
+  badge.textContent = `${inWeek.length} 位`;
+
+  // 列出的時段：這位助教（或全部助教）排班的時段，加上這週實際有人的時段
+  const times = [...new Set([
+    ...roster.filter(s=>s.ta && (taWeekAllTas || s.ta === state.name)).map(s=>s.time),
+    ...inWeek.map(r=>r.slotTime),
+  ])].sort(compareTime);
+
+  const e = escapeHtml;
+  let html = `<div class="week-nav">
+    <button type="button" data-tawk="-7">‹ 上一週</button>
+    <span class="week-label">${shortDate(dates[0])} – ${shortDate(dates[4])}${taWeekStart === mondayOf(today) ? "（本週）" : ""}</span>
+    <button type="button" data-tawk="7">下一週 ›</button>
+  </div>`;
+
+  if(times.length === 0){
+    html += '<div class="empty">這一週沒有補課</div>';
+  } else {
+    html += '<div class="slot-scroll"><table class="slot-table week-table"><thead><tr><th></th>';
+    dates.forEach((d, i)=>{
+      const cls = d < today ? "past" : (d === today ? "today" : "");
+      html += `<th class="${cls}">${WEEKDAY_LABEL[weekdays[i]]}<small>${shortDate(d)}</small></th>`;
+    });
+    html += '</tr></thead><tbody>';
+    times.forEach(t=>{
+      html += `<tr><th>${e(t)}</th>`;
+      dates.forEach(d=>{
+        const list = inWeek
+          .filter(r=>r.slotDate === d && r.slotTime === t)
+          .sort((a, b)=>String(a.studentNameCh || "").localeCompare(String(b.studentNameCh || ""), "zh-Hant"));
+        html += `<td>${list.length ? list.map(r=>{
+          const st = computeStatus(r);
+          const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
+          return `<div class="wk-item ${st}"><b>${e(who)}</b><small>${statusLabel(st)}${taWeekAllTas ? `・${e(r.slotTA)}` : ""}</small></div>`;
+        }).join("") : '<div class="wk-empty">—</div>'}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+  wrap.innerHTML = html;
+
+  wrap.querySelectorAll("[data-tawk]").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      taWeekStart = addDays(taWeekStart, Number(btn.dataset.tawk));
+      renderTaWeek();
+    });
+  });
+}
+
+document.getElementById("taWeekAll").addEventListener("change", e=>{
+  taWeekAllTas = e.target.checked;
+  renderTaWeek();
+});
+
 function renderTaLists(){
+  renderTaWeek();
   const pendingWrap = document.getElementById("taPendingList");
   const doneWrap = document.getElementById("taDoneList");
   const pendingBadge = document.getElementById("taPendingCount");
@@ -1159,7 +1238,7 @@ function recordCardHtml(r, mode){
     <div class="rc-head">
       <div>
         <div class="rc-title">${e(r.studentNameCh)} ${r.studentNameEn?("("+e(r.studentNameEn)+")"):""}</div>
-        <div class="rc-meta">${e(r.absenceDate)}｜${e(r.leaveReason)}｜${e(r.className)} ${e(r.homeroomTeacher)}</div>
+        <div class="rc-meta">${[r.absenceDate, r.leaveReason, r.className, r.homeroomTeacher && `英語總導師：${r.homeroomTeacher}`].filter(Boolean).map(e).join("｜")}</div>
       </div>
       <span class="tag ${status}">${statusLabel(status)}</span>
     </div>

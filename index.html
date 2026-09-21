@@ -232,6 +232,25 @@
   }
   .slot-cell.selected .slot-note{color:#fff;}
   .slot-multi{display:flex; flex-direction:column; gap:4px;}
+
+  /* 助教的一週補課總覽 */
+  .wk-toggle{
+    display:inline-flex; align-items:center; gap:6px; cursor:pointer;
+    font-size:12.5px; color:var(--ink-soft); margin-bottom:var(--s-3);
+  }
+  .week-table td{padding:2px; vertical-align:top;}
+  .wk-item{
+    background:#fff; border:1px solid var(--line); border-radius:6px;
+    padding:6px 8px; margin-bottom:4px; text-align:left; line-height:1.4;
+  }
+  .wk-item:last-child{margin-bottom:0;}
+  .wk-item b{display:block; font-size:12.5px; font-weight:700; color:var(--ink);}
+  .wk-item small{display:block; font-size:10.5px; color:var(--ink-soft); margin-top:1px;}
+  .wk-item.overdue{background:var(--warn-soft); border-color:#F0CFC6;}
+  .wk-item.noShow{background:var(--warn-soft); border-color:var(--warn);}
+  .wk-item.toVerify{background:var(--primary-soft); border-color:#D6CCEE;}
+  .wk-item.done{background:var(--ok-soft); border-color:#C9E2D5;}
+  .wk-empty{color:var(--ink-faint); font-size:12px; text-align:center; padding:6px 0;}
   .week-nav{display:flex; align-items:center; justify-content:space-between; gap:var(--s-2); margin-bottom:var(--s-2);}
   .week-nav .week-label{font-size:13px; font-weight:700; color:var(--primary); text-align:center;}
   .week-nav button{
@@ -738,6 +757,12 @@
     <div class="callout">
       <b>補課前請先完成</b>：預備補課內容並向老師拿到課本資料 ・ 確認學生補課資訊 ・ 補課當天點名，未到或遲到要打電話給教學老師 ・ 補課後回傳資訊給家長。
       職責範圍看 <a data-goto="rules">補課合作說明</a>。
+    </div>
+
+    <div class="panel">
+      <h2>本週補課總覽 <span class="count" id="taWeekCount"></span></h2>
+      <label class="wk-toggle"><input type="checkbox" id="taWeekAll"> 顯示全部助教的補課</label>
+      <div id="taWeek"></div>
     </div>
 
     <div class="panel">
