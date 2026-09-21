@@ -529,8 +529,8 @@ function saveCustomName(name){
 }
 function taNameList(){ return uniqSorted(roster.filter(s=>s.ta).map(s=>s.ta)); }
 function teacherNameList(){
-  // 登記者和英語總導師都算老師：開單的人和班導可能不是同一位，兩邊都要選得到
-  return uniqSorted([...records.map(r=>r.teacherName), ...records.map(r=>r.homeroomTeacher), ...loadCustomNames()]);
+  // 老師頁是給英語總導師看的，名單就取英語總導師
+  return uniqSorted([...records.map(r=>r.homeroomTeacher), ...loadCustomNames()]);
 }
 function namesForRole(role){
   if(role === "ta") return taNameList();
@@ -814,11 +814,15 @@ document.getElementById("teacherForm").addEventListener("submit", e=>{
       records.push({ id:uid(), ...data });
       renderAll();
     }
+    const otherHomeroom = data.homeroomTeacher && data.homeroomTeacher !== state.name ? data.homeroomTeacher : "";
     form.reset();
     selectedSlot = null;
     document.getElementById("teacherFormHint").textContent = "";
+    prefillHomeroom();
     renderSlotPicker();
-    showToast("已送出補課紀錄");
+    showToast(otherHomeroom
+      ? `已送出；這筆的英語總導師是 ${otherHomeroom}，會出現在他的清單`
+      : "已送出補課紀錄");
   }, "送出中…");
 });
 
@@ -1026,11 +1030,26 @@ function openDeptUpdateModal(r, preset = {}){
 }
 
 // ---------------- 渲染：老師的紀錄列表 ----------------
+// 老師頁是給英語總導師看的：表單的「英語總導師」先帶入右上角選的名字，
+// 免得老師忘了填、送出後在自己的清單裡找不到那筆
+function prefillHomeroom(){
+  const el = document.getElementById("teacherForm")?.elements.homeroomTeacher;
+  if(el && !el.value.trim() && state.name) el.value = state.name;
+}
+
 function renderTeacherRecords(){
   const wrap = document.getElementById("teacherRecordList");
   const badge = document.getElementById("teacherCount");
-  // 我登記的，加上我是英語總導師的（可能別人幫忙開單）
-  const mine = records.filter(r=>r.teacherName===state.name || r.homeroomTeacher===state.name);
+  // 只看「我是英語總導師」的紀錄（代別班開的單會出現在那位總導師的清單）
+  const mine = records.filter(r=>r.homeroomTeacher===state.name);
+  // 之後要上的排前面（由近到遠），已經過去的排後面（由新到舊）
+  const day = todayStr();
+  mine.sort((a, b)=>{
+    const ad = a.slotDate || "", bd = b.slotDate || "";
+    const aUpcoming = ad >= day, bUpcoming = bd >= day;
+    if(aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+    return aUpcoming ? ad.localeCompare(bd) : bd.localeCompare(ad);
+  });
 
   if(!state.name){
     badge.textContent = "";
@@ -1122,37 +1141,32 @@ function restoreTaFormState(snapshot){
 let taWeekStart = null;      // 目前顯示哪一週（該週週一的日期）
 let taWeekAllTas = false;    // false = 只看指派給自己的；true = 全部助教（互相支援時用）
 
-function renderTaWeek(){
-  const wrap = document.getElementById("taWeek");
-  const badge = document.getElementById("taWeekCount");
+// 助教頁和老師頁共用同一個週總覽，只是看的紀錄不同
+function renderWeekOverview({ wrap, badge, weekStart, onWeekChange, match, rosterMatch, showTa, onPick }){
   if(!wrap) return;
-  if(!taWeekStart) taWeekStart = mondayOf(todayStr());
-
   if(!state.name){
     wrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字</div>';
-    badge.textContent = "";
+    if(badge) badge.textContent = "";
     return;
   }
 
   const today = todayStr();
   const weekdays = ["Mon","Tue","Wed","Thu","Fri"];
-  const dates = weekdays.map((_, i)=>addDays(taWeekStart, i));
-  const inWeek = records.filter(r=>
-    !r.cancelled && r.slotDate && dates.includes(r.slotDate) &&
-    (taWeekAllTas || r.slotTA === state.name));
-  badge.textContent = `${inWeek.length} 位`;
+  const dates = weekdays.map((_, i)=>addDays(weekStart, i));
+  const inWeek = records.filter(r=>!r.cancelled && r.slotDate && dates.includes(r.slotDate) && match(r));
+  if(badge) badge.textContent = `${inWeek.length} 位`;
 
-  // 列出的時段：這位助教（或全部助教）排班的時段，加上這週實際有人的時段
+  // 列出的時段：相關的排班時段，加上這週實際有人的時段
   const times = [...new Set([
-    ...roster.filter(s=>s.ta && (taWeekAllTas || s.ta === state.name)).map(s=>s.time),
+    ...roster.filter(s=>s.ta && rosterMatch(s)).map(s=>s.time),
     ...inWeek.map(r=>r.slotTime),
   ])].sort(compareTime);
 
   const e = escapeHtml;
   let html = `<div class="week-nav">
-    <button type="button" data-tawk="-7">‹ 上一週</button>
-    <span class="week-label">${shortDate(dates[0])} – ${shortDate(dates[4])}${taWeekStart === mondayOf(today) ? "（本週）" : ""}</span>
-    <button type="button" data-tawk="7">下一週 ›</button>
+    <button type="button" data-wk="-7">‹ 上一週</button>
+    <span class="week-label">${shortDate(dates[0])} – ${shortDate(dates[4])}${weekStart === mondayOf(today) ? "（本週）" : ""}</span>
+    <button type="button" data-wk="7">下一週 ›</button>
   </div>`;
 
   if(times.length === 0){
@@ -1173,7 +1187,7 @@ function renderTaWeek(){
         html += `<td>${list.length ? list.map(r=>{
           const st = computeStatus(r);
           const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
-          return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${statusLabel(st)}${taWeekAllTas ? `・${e(r.slotTA)}` : ""}</small></button>`;
+          return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${statusLabel(st)}${showTa ? `・${e(r.slotTA)}` : ""}</small></button>`;
         }).join("") : '<div class="wk-empty">—</div>'}</td>`;
       });
       html += '</tr>';
@@ -1182,15 +1196,63 @@ function renderTaWeek(){
   }
   wrap.innerHTML = html;
 
-  wrap.querySelectorAll("[data-tawk]").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
-      taWeekStart = addDays(taWeekStart, Number(btn.dataset.tawk));
-      renderTaWeek();
-    });
+  wrap.querySelectorAll("[data-wk]").forEach(btn=>{
+    btn.addEventListener("click", ()=>onWeekChange(addDays(weekStart, Number(btn.dataset.wk))));
   });
   wrap.querySelectorAll("[data-rec]").forEach(btn=>{
-    btn.addEventListener("click", ()=>focusTaRecordCard(btn.dataset.rec));
+    btn.addEventListener("click", ()=>onPick(btn.dataset.rec));
   });
+}
+
+function renderTaWeek(){
+  if(!taWeekStart) taWeekStart = mondayOf(todayStr());
+  renderWeekOverview({
+    wrap: document.getElementById("taWeek"),
+    badge: document.getElementById("taWeekCount"),
+    weekStart: taWeekStart,
+    onWeekChange: w=>{ taWeekStart = w; renderTaWeek(); },
+    match: r=>taWeekAllTas || r.slotTA === state.name,
+    rosterMatch: s=>taWeekAllTas || s.ta === state.name,
+    showTa: taWeekAllTas,
+    onPick: focusTaRecordCard,
+  });
+}
+
+// 老師頁：我班上這一週要補課的學生
+let teacherWeekStart = null;
+function renderTeacherWeek(){
+  if(!teacherWeekStart) teacherWeekStart = mondayOf(todayStr());
+  renderWeekOverview({
+    wrap: document.getElementById("teacherWeek"),
+    badge: document.getElementById("teacherWeekCount"),
+    weekStart: teacherWeekStart,
+    onWeekChange: w=>{ teacherWeekStart = w; renderTeacherWeek(); },
+    match: r=>r.homeroomTeacher === state.name,
+    rosterMatch: ()=>true,
+    showTa: true,            // 老師會想知道是哪位助教負責
+    onPick: focusTeacherRecordCard,
+  });
+}
+
+// 從週總覽點學生 → 捲到下面那張卡片並閃一下
+function focusTeacherRecordCard(id){
+  const r = records.find(x=>x.id === id);
+  if(!r) return;
+  const find = () => document.querySelector(`#teacherRecordList .record-card[data-id="${CSS.escape(id)}"]`);
+  if(!find()){
+    // 可能被狀態篩選或分頁擋住，先全部顯示
+    teacherFilter.status = "all";
+    teacherShown = Infinity;
+    document.querySelectorAll("#teacherStatusFilter button")
+      .forEach(b=>b.classList.toggle("active", b.dataset.status === "all"));
+    renderTeacherRecords();
+  }
+  const card = find();
+  if(!card) return;
+  card.scrollIntoView({ behavior:"smooth", block:"center" });
+  card.classList.remove("flash-card");
+  void card.offsetWidth;
+  card.classList.add("flash-card");
 }
 
 // 總覽點了某位學生 → 捲到下面那張卡片並閃一下
@@ -1285,27 +1347,36 @@ function recordCardHtml(r, mode){
       </div>
       <span class="tag ${status}">${statusLabel(status)}</span>
     </div>
-    <div class="rc-body">
-      ${kv("教學老師", r.teachingTeacher)}
-      ${kv("缺課核心課程", r.coreCourse)}
-      ${kv("課本", r.book)}
-      ${kv("單元", r.unit)}
-      ${kv("指派補課內容", r.assignedContent, true)}
-      ${kv("預計時長", r.plannedDuration)}
-      ${kv("時段/負責人", slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}
-      ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`, true) : ``}
-      ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
-      ${r.lastNoShow ? kv("未到紀錄", `${r.lastNoShow.date} ${r.lastNoShow.slot || ""} 未到${r.lastNoShow.by ? `（${r.lastNoShow.by} 點名）` : ""}${r.lastNoShow.note ? `：${r.lastNoShow.note}` : ""}`, true) : ``}
-      ${r.actualDate ? `
-      ${kv("實際補課日期", r.actualDate)}
-      ${kv("點名", r.attendance === "出席" ? "準時出席" : r.attendance)}
-      ${kv("驗收成果", r.result, true)}
-      ${kv("作業狀況", r.homeworkStatus)}
-      ${kv("助教備註", r.taNote, true)}
-      ${kv("家長已通知", r.parentNotified ? "是" : "否")}
-      ${kv("老師查核", r.teacherVerified
-            ? `${r.verifiedBy || ""} 已簽名${r.verifiedAt ? `（${formatStamp(r.verifiedAt)}）` : ""}`
-            : "尚未查核")}` : ``}
+    <!-- 上半＝老師填的（淡紫）、下半＝助教填的（淡金），兩塊顏色分開，一眼看得出誰負責填 -->
+    <div class="rc-sec teacher">
+      <div class="rc-sec-title">老師指派 <small>由英語老師填寫</small></div>
+      <div class="rc-body">
+        ${kv("缺課核心課程", r.coreCourse)}
+        ${kv("課本", r.book)}
+        ${kv("單元", r.unit)}
+        ${kv("指派補課內容", r.assignedContent, true)}
+        ${kv("預計時長", r.plannedDuration)}
+        ${kv("時段/負責人", slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}
+        ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`, true) : ``}
+        ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
+      </div>
+    </div>
+    <div class="rc-sec ta">
+      <div class="rc-sec-title">助教回報 <small>由助教填寫</small></div>
+      ${(r.actualDate || r.lastNoShow) ? `
+      <div class="rc-body">
+        ${r.lastNoShow ? kv("未到紀錄", `${r.lastNoShow.date} ${r.lastNoShow.slot || ""} 未到${r.lastNoShow.by ? `（${r.lastNoShow.by} 點名）` : ""}${r.lastNoShow.note ? `：${r.lastNoShow.note}` : ""}`, true) : ``}
+        ${r.actualDate ? `
+        ${kv("實際補課日期", r.actualDate)}
+        ${kv("點名", r.attendance === "出席" ? "準時出席" : r.attendance)}
+        ${kv("驗收成果", r.result, true)}
+        ${kv("作業狀況", r.homeworkStatus)}
+        ${kv("助教備註", r.taNote, true)}
+        ${kv("家長已通知", r.parentNotified ? "是" : "否")}
+        <div class="kv wide verify"><b>老師查核</b><span>${e(r.teacherVerified
+              ? `${r.verifiedBy || ""} 已簽名${r.verifiedAt ? `（${formatStamp(r.verifiedAt)}）` : ""}`
+              : "尚未查核")}</span></div>` : ``}
+      </div>` : `<div class="rc-wait">還沒填寫補課成果</div>`}
     </div>
 
     ${status === "noShow" && mode === "teacher" ? `<div class="rc-alert">學生 ${e(r.lastNoShow.date)} 沒有到。請按「修改」改期（排回下週同一時段也要按），再傳異動通知給教學部。</div>` : ``}
@@ -1872,6 +1943,8 @@ function renderActiveView(){
   refreshNameField();
   if(state.role === "teacher" && dirty.teacher){
     renderSlotPicker();
+    renderTeacherWeek();
+    prefillHomeroom();
     renderTeacherRecords();
     dirty.teacher = false;
   } else if(state.role === "ta" && dirty.ta){
