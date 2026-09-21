@@ -1238,7 +1238,7 @@ function recordCardHtml(r, mode){
     <div class="rc-head">
       <div>
         <div class="rc-title">${e(r.studentNameCh)} ${r.studentNameEn?("("+e(r.studentNameEn)+")"):""}</div>
-        <div class="rc-meta">${[r.absenceDate, r.leaveReason, r.className, r.homeroomTeacher && `英語總導師：${r.homeroomTeacher}`].filter(Boolean).map(e).join("｜")}</div>
+        <div class="rc-meta">${[r.absenceDate, r.leaveReason, r.className, r.homeroomTeacher && `英語總導師：${r.homeroomTeacher}`, r.teachingTeacher && `教學老師：${r.teachingTeacher}`].filter(Boolean).map(e).join("｜")}</div>
       </div>
       <span class="tag ${status}">${statusLabel(status)}</span>
     </div>
