@@ -80,15 +80,29 @@
   header .brand .sub{font-size:11.5px; opacity:.72; margin-top:1px;}
   header .identity{display:flex; align-items:center; gap:var(--s-2); flex-shrink:0;}
   /* 姓名欄：沒填就什麼紀錄都看不到，所以要夠顯眼 */
-  .name-box{display:flex; align-items:center; gap:var(--s-2);}
-  .name-label{
-    font-size:11.5px; font-weight:500; color:rgba(255,255,255,.8);
+  /* 跟分頁之間留一條分隔線，不然「英語總導師」會被看成第五個分頁 */
+  .name-box{
+    display:flex; flex-direction:column; align-items:flex-start; gap:3px;
+    border-left:1px solid rgba(255,255,255,.25); padding-left:var(--s-3); margin-left:var(--s-1);
+  }
+  .name-box[hidden]{display:none;}
+  .name-caption{
+    font-size:10.5px; color:rgba(255,255,255,.7);
     white-space:nowrap; letter-spacing:.03em;
   }
+  .name-caption b{font-weight:600; color:rgba(255,255,255,.95);}
+  .name-row{display:flex; align-items:center; gap:4px;}
+  .name-row[hidden]{display:none;}
+  .name-add-btn{
+    border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.16); color:#fff;
+    width:30px; height:34px; border-radius:var(--r-sm); font-size:15px; line-height:1; cursor:pointer;
+  }
+  .name-add-btn:hover{background:rgba(255,255,255,.28);}
+  .name-add-btn[hidden]{display:none;}
   header #myName{
     background:#fff; color:var(--primary); font-weight:700; font-size:14.5px;
-    border:2px solid #fff; padding:8px 10px; border-radius:var(--r-sm);
-    width:170px; transition:background .2s, border-color .2s, color .2s; cursor:pointer;
+    border:2px solid #fff; padding:7px 10px; border-radius:var(--r-sm);
+    width:150px; transition:background .2s, border-color .2s, color .2s; cursor:pointer;
   }
   header #myName option{color:var(--ink); font-weight:400;}
   header #myName:focus{outline:3px solid rgba(255,255,255,.45); outline-offset:1px;}
@@ -545,12 +559,19 @@
   @media (max-width:860px){
     header{flex-wrap:wrap; padding:var(--s-3) var(--s-4); gap:var(--s-2);}
     header .brand .title{font-size:14.5px; white-space:normal;}
-    header .identity{width:100%; justify-content:space-between;}
-    .name-label{display:none;}          /* 手機版空間不夠，靠 placeholder 表達 */
-    .name-box{flex:1; min-width:0; max-width:170px;}
-    header #myName{width:100%; font-size:14px; padding:8px 8px;}
-    .name-add input{width:100%; min-width:0;}
-    .role-tabs{flex:1;}
+    /* 手機：標題和身分同一列（身分靠右），分頁自己一列，名字才有足夠寬度。
+       display:contents 讓 identity 裡的分頁和身分變成 header 的直接子項，才能各自排 */
+    header .identity{display:contents;}
+    header .brand{order:1; flex:1 1 0; min-width:0;}   /* basis 0，標題才會讓位給身分欄，不會被擠到下一列 */
+    .name-box{
+      order:2; flex:0 0 auto; width:auto; max-width:170px;
+      border-left:none; padding-left:0; margin-left:auto;
+    }
+    .name-row{width:100%;}
+    header #myName{flex:1; width:auto; min-width:0; font-size:14px; padding:8px 8px;}
+    .name-add input{flex:1; width:auto; min-width:0;}
+    .btn-signout{order:4;}
+    .role-tabs{order:3; flex:0 0 100%; width:100%;}
     .role-tabs button{flex:1; padding:7px 6px; font-size:12px;}
     main{padding:var(--s-4) var(--s-3) 60px;}
     .panel{padding:var(--s-4); border-radius:var(--r-sm);}
@@ -622,9 +643,12 @@
       <button data-role="admin">管理職</button>
       <button data-role="rules">補課合作說明</button>
     </div>
-    <div class="name-box">
-      <span class="name-label" id="nameLabel">填表老師</span>
-      <select id="myName" aria-label="選擇名字"></select>
+    <div class="name-box" id="nameBox">
+      <span class="name-caption">我是 · <b id="nameLabel">英語總導師</b></span>
+      <div class="name-row" id="nameRow">
+        <select id="myName" aria-label="選擇你的身分" title="查核簽名、改期、取消都會記下這個名字"></select>
+        <button type="button" class="name-add-btn" id="nameAddBtn" title="新增名字" aria-label="新增名字">＋</button>
+      </div>
       <div class="name-add" id="nameAdd" hidden>
         <input id="nameAddInput" placeholder="輸入新名字" autocomplete="off">
         <button type="button" id="nameAddOk" aria-label="確定">✓</button>
@@ -1012,6 +1036,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script type="module" src="./app.js?v=20260921b"></script>
+<script type="module" src="./app.js?v=20260921c"></script>
 </body>
 </html>

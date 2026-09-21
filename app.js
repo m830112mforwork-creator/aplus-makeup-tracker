@@ -479,6 +479,7 @@ document.getElementById("adminLockBtn").addEventListener("click", ()=>{
 function switchRole(role){
   if(role === "admin" && !isAdminUnlocked()){ openAdminLock(); return; }
   state.role = role;
+  state.name = nameForRole(role);   // 每個角色各記各的名字
   document.querySelectorAll("#roleTabs button").forEach(b=>b.classList.toggle("active", b.dataset.role===role));
   document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
   document.getElementById("view-"+role).classList.add("active");
@@ -503,6 +504,9 @@ document.querySelectorAll("[data-goto]").forEach(a=>{
 // 裡有的名字——助教的紀錄是靠時段設定的姓名配對的，名單外的名字填了也看不到東西。
 const nameSelect = document.getElementById("myName");
 const nameLabel = document.getElementById("nameLabel");
+const nameBox = document.getElementById("nameBox");
+const nameRow = document.getElementById("nameRow");
+const nameAddBtn = document.getElementById("nameAddBtn");
 const nameAdd = document.getElementById("nameAdd");
 const nameAddInput = document.getElementById("nameAddInput");
 const CUSTOM_NAMES_KEY = "makeup_custom_names";
@@ -510,9 +514,23 @@ const CUSTOM_NAMES_KEY = "makeup_custom_names";
 const NAME_HINT = {
   teacher: { label:"英語總導師", pick:"選擇英語總導師", noun:"老師" },
   ta:      { label:"助教",     pick:"選擇助教",     noun:"助教" },
-  admin:   { label:"管理職",   pick:"選擇名字",     noun:"" },
+  admin:   { label:"操作人",   pick:"選擇名字",     noun:"" },
   rules:   { label:"英語總導師", pick:"選擇英語總導師", noun:"老師" },
 };
+
+// 名字是「身分」不是篩選器：老師頁記英語總導師、助教頁記助教、管理職頁記操作人，
+// 三個分開存。以前共用一個名字，切到助教頁會看到「某某（不在助教名單）」，很難懂。
+const NAMES_KEY = "makeup_names";
+function nameSlot(role){ return role === "rules" ? "teacher" : (role || "teacher"); }
+function loadRoleNames(){
+  try{ return JSON.parse(localStorage.getItem(NAMES_KEY) || "{}"); }catch(_){ return {}; }
+}
+function nameForRole(role){ return String(loadRoleNames()[nameSlot(role)] || "").trim(); }
+function saveRoleName(role, name){
+  const all = loadRoleNames();
+  all[nameSlot(role)] = name;
+  try{ localStorage.setItem(NAMES_KEY, JSON.stringify(all)); }catch(_){}
+}
 
 function uniqSorted(list){
   return [...new Set(list.map(n=>String(n||"").trim()).filter(Boolean))]
@@ -540,7 +558,13 @@ function namesForRole(role){
 
 function refreshNameField(){
   const hint = NAME_HINT[state.role] || NAME_HINT.teacher;
+  // 補課合作說明只是讀的，不需要身分
+  nameBox.hidden = state.role === "rules";
+  if(nameBox.hidden) return;
   nameLabel.textContent = hint.label;
+  nameSelect.setAttribute("aria-label", `選擇你的身分：${hint.label}`);
+  // 助教名單由管理職的時段設定決定，不能自己加
+  nameAddBtn.hidden = state.role === "ta";
   const names = namesForRole(state.role);
   const ready = loaded.records && loaded.roster;
 
@@ -556,10 +580,10 @@ function refreshNameField(){
       const suffix = ready && hint.noun ? `（不在${hint.noun}名單）` : "";
       html += `<option value="${e(state.name)}">${e(state.name)}${suffix}</option>`;
     }
-    html += `<option disabled>──────────</option>`;
-    html += state.role === "ta"
-      ? `<option disabled>名單沒有你？請管理職先到時段設定加入</option>`
-      : `<option value="__add__">＋ 新增名字…</option>`;
+    // 選單裡只放人名，「新增名字」改成旁邊那顆 ＋ 按鈕
+    if(state.role === "ta"){
+      html += `<option disabled>名單沒有你？請管理職先到時段設定加入</option>`;
+    }
     nameSelect.innerHTML = html;
   }
   nameSelect.value = state.name || "";
@@ -568,24 +592,22 @@ function refreshNameField(){
 
 function setName(name){
   state.name = name;
-  try{ localStorage.setItem("makeup_name", name); }catch(_){}
+  saveRoleName(state.role, name);
   renderAll();
 }
 
-nameSelect.addEventListener("change", ()=>{
-  if(nameSelect.value === "__add__"){ startAddName(); return; }
-  setName(nameSelect.value);
-});
+nameSelect.addEventListener("change", ()=>setName(nameSelect.value));
+nameAddBtn.addEventListener("click", startAddName);
 
 function startAddName(){
-  nameSelect.hidden = true;
+  nameRow.hidden = true;
   nameAdd.hidden = false;
   nameAddInput.value = "";
   nameAddInput.focus();
 }
 function endAddName(){
   nameAdd.hidden = true;
-  nameSelect.hidden = false;
+  nameRow.hidden = false;
   nameSelect.dataset.sig = "";   // 強制重建，把選單值還原成原本的名字
   refreshNameField();
 }
@@ -599,7 +621,7 @@ function commitAddName(){
   if(!match) saveCustomName(name);
   if(match && match !== raw) showToast(`名單上已經有「${match}」，已直接選取`);
   nameAdd.hidden = true;
-  nameSelect.hidden = false;
+  nameRow.hidden = false;
   setName(name);
 }
 document.getElementById("nameAddOk").addEventListener("click", commitAddName);
@@ -609,9 +631,14 @@ nameAddInput.addEventListener("keydown", e=>{
   if(e.key === "Escape"){ e.preventDefault(); endAddName(); }
 });
 
-state.name = (localStorage.getItem("makeup_name") || "").trim();
-// 這台電腦用過的名字記下來，老師還沒送出過紀錄時，名單上也找得到自己
-if(state.name) saveCustomName(state.name);
+(function migrateName(){
+  // 舊版只存一個 makeup_name，第一次執行時複製到三個角色，使用者不會覺得名字不見了
+  const legacy = (localStorage.getItem("makeup_name") || "").trim();
+  if(!legacy) return;
+  saveCustomName(legacy);   // 這台電腦用過的名字記下來，老師還沒送出過紀錄時，名單上也找得到自己
+  if(Object.keys(loadRoleNames()).length) return;
+  try{ localStorage.setItem(NAMES_KEY, JSON.stringify({ teacher:legacy, ta:legacy, admin:legacy })); }catch(_){}
+})();
 (function restoreRole(){
   let saved = localStorage.getItem("makeup_role");
   if(saved === "admin" && !isAdminUnlocked()) saved = "teacher";
@@ -621,6 +648,7 @@ if(state.name) saveCustomName(state.name);
     document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));
     document.getElementById("view-"+saved).classList.add("active");
   }
+  state.name = nameForRole(state.role);
 })();
 
 // ---------------- 時段表（新增紀錄、修改紀錄改期共用）----------------
