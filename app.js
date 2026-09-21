@@ -508,10 +508,10 @@ const nameAddInput = document.getElementById("nameAddInput");
 const CUSTOM_NAMES_KEY = "makeup_custom_names";
 
 const NAME_HINT = {
-  teacher: { label:"填表老師", pick:"選擇填表老師", noun:"老師" },
+  teacher: { label:"英語總導師", pick:"選擇英語總導師", noun:"老師" },
   ta:      { label:"助教",     pick:"選擇助教",     noun:"助教" },
   admin:   { label:"管理職",   pick:"選擇名字",     noun:"" },
-  rules:   { label:"填表老師", pick:"選擇填表老師", noun:"老師" },
+  rules:   { label:"英語總導師", pick:"選擇英語總導師", noun:"老師" },
 };
 
 function uniqSorted(list){
@@ -528,7 +528,10 @@ function saveCustomName(name){
   try{ localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(list)); }catch(_){}
 }
 function taNameList(){ return uniqSorted(roster.filter(s=>s.ta).map(s=>s.ta)); }
-function teacherNameList(){ return uniqSorted([...records.map(r=>r.teacherName), ...loadCustomNames()]); }
+function teacherNameList(){
+  // 登記者和英語總導師都算老師：開單的人和班導可能不是同一位，兩邊都要選得到
+  return uniqSorted([...records.map(r=>r.teacherName), ...records.map(r=>r.homeroomTeacher), ...loadCustomNames()]);
+}
 function namesForRole(role){
   if(role === "ta") return taNameList();
   if(role === "admin") return uniqSorted([...teacherNameList(), ...taNameList()]);
@@ -1026,11 +1029,12 @@ function openDeptUpdateModal(r, preset = {}){
 function renderTeacherRecords(){
   const wrap = document.getElementById("teacherRecordList");
   const badge = document.getElementById("teacherCount");
-  const mine = records.filter(r=>r.teacherName===state.name);
+  // 我登記的，加上我是英語總導師的（可能別人幫忙開單）
+  const mine = records.filter(r=>r.teacherName===state.name || r.homeroomTeacher===state.name);
 
   if(!state.name){
     badge.textContent = "";
-    wrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字，才能看到你登記的紀錄</div>';
+    wrap.innerHTML = '<div class="empty">請先在右上角選擇你的名字，才能看到你班上的補課紀錄</div>';
     return;
   }
 
@@ -1040,7 +1044,14 @@ function renderTeacherRecords(){
   badge.textContent = [`${mine.length} 筆`, noShow && `${noShow} 筆未到待改期`, toVerify && `${toVerify} 筆待查核`]
     .filter(Boolean).join("・");
 
-  if(mine.length===0){ wrap.innerHTML = '<div class="empty">還沒有登記任何紀錄</div>'; return; }
+  if(mine.length===0){ wrap.innerHTML = '<div class="empty">還沒有任何補課紀錄</div>'; return; }
+  // 表單「英語導師」欄的候選名單，避免同一個人被打成不同寫法
+  const hrList = document.getElementById("homeroomOptions");
+  const hrNames = uniqSorted(records.map(r=>r.homeroomTeacher));
+  if(hrList && hrList.dataset.names !== hrNames.join("|")){
+    hrList.dataset.names = hrNames.join("|");
+    hrList.innerHTML = hrNames.map(n=>`<option value="${escapeHtml(n)}">`).join("");
+  }
 
   const shown = teacherFilter.status === "all"
     ? mine

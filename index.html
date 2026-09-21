@@ -652,7 +652,7 @@
             <div class="field"><label>學生英文名</label><input name="studentNameEn"></div>
             <div class="field"><label>年級</label><input name="grade" placeholder="例如：三年級"></div>
             <div class="field"><label>英語班級</label><input name="className" placeholder="例如：FAA、FLC"></div>
-            <div class="field"><label>英語導師</label><input name="homeroomTeacher"></div>
+            <div class="field"><label>英語總導師</label><input name="homeroomTeacher" list="homeroomOptions" autocomplete="off"><datalist id="homeroomOptions"></datalist></div>
             <div class="field"><label>教學老師 <span class="hint">學生沒到時助教要聯絡的人</span></label><input name="teachingTeacher"></div>
           </div>
         </div>
@@ -743,7 +743,7 @@
     </div>
 
     <div class="panel">
-      <h2>我登記的補課紀錄 <span class="count" id="teacherCount"></span></h2>
+      <h2>我的補課紀錄 <span class="count" id="teacherCount"></span></h2>
       <div class="filter-bar">
         <div class="chip-row" id="teacherStatusFilter">
           <button data-status="all" class="active">全部</button>
