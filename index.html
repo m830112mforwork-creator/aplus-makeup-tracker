@@ -537,6 +537,18 @@
     max-height:86vh; overflow-y:auto;
   }
   .modal h3{margin-bottom:var(--s-3); font-size:15.5px;}
+  /* 管理名單 */
+  .nm-sub{font-size:12.5px; color:var(--ink-soft); line-height:1.65; margin-bottom:var(--s-3);}
+  .nm-row{
+    display:flex; align-items:center; gap:var(--s-2);
+    padding:var(--s-2) 0; border-bottom:1px solid var(--line-soft);
+  }
+  .nm-row:last-child{border-bottom:none;}
+  .nm-input{
+    flex:1; min-width:0; border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:7px 9px; font-size:13.5px; color:var(--ink); background:#fff;
+  }
+  .nm-count{font-size:11.5px; color:var(--ink-faint); white-space:nowrap; min-width:54px; text-align:right;}
   .modal textarea{
     width:100%; min-height:230px; border:1px solid var(--line); border-radius:var(--r-sm);
     padding:13px; font-size:13.5px; line-height:1.75; white-space:pre-wrap;
@@ -576,6 +588,9 @@
     main{padding:var(--s-4) var(--s-3) 60px;}
     .panel{padding:var(--s-4); border-radius:var(--r-sm);}
     .kv b{min-width:70px;}
+    .nm-row{flex-wrap:wrap;}
+    .nm-input{flex:1 1 100%;}
+    .nm-count{margin-right:auto; text-align:left;}
 
     /* 表格改成一筆一張卡 */
     .table-wrap{border:none; border-radius:0; overflow:visible;}
@@ -648,6 +663,7 @@
       <div class="name-row" id="nameRow">
         <select id="myName" aria-label="選擇你的身分" title="查核簽名、改期、取消都會記下這個名字"></select>
         <button type="button" class="name-add-btn" id="nameAddBtn" title="新增名字" aria-label="新增名字">＋</button>
+        <button type="button" class="name-add-btn" id="nameEditBtn" title="管理名單：改名、刪除" aria-label="管理名單">✎</button>
       </div>
       <div class="name-add" id="nameAdd" hidden>
         <input id="nameAddInput" placeholder="輸入新名字" autocomplete="off">
@@ -1034,8 +1050,19 @@
   </form>
 </div>
 
+<div class="modal-backdrop" id="namesBackdrop">
+  <div class="modal">
+    <h3>管理英語總導師名單</h3>
+    <p class="nm-sub">改名會一併更新紀錄裡的老師欄位（英語總導師、教學老師、登記者）。名單是大家共用的，改了每台電腦都會同步。</p>
+    <div id="namesList"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn small" id="namesClose">關閉</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
-<script type="module" src="./app.js?v=20260921c"></script>
+<script type="module" src="./app.js?v=20260921d"></script>
 </body>
 </html>

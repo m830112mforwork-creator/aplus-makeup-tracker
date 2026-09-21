@@ -49,6 +49,9 @@ let auth = null;
 let unsubscribers = [];   // Firestore 監聽器，登出時要一起收掉
 let records = [];
 let roster = [];
+let sharedNames = [];          // 老師名單：全部人共用，存在 roster 集合的 __teacherNames 這份文件
+let namesMigrated = false;
+const NAMES_DOC_ID = "__teacherNames";
 let state = { role: "teacher", name: "" };
 let selectedSlot = null; // {weekday, time, ta}
 let adminFilter = { search: "", status: "all", ta: "" };
@@ -140,8 +143,12 @@ function startDataListeners(){
   unsubscribers.push(
     // 時段表一開始是空的，由管理職照實際排班輸入（不自動建立預設時段）
     onSnapshot(collection(db,"roster"), snap => {
-      roster = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      const docs = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+      // 名單那份文件用 kind 標記，別讓它跑進時段表
+      roster = docs.filter(d => d.kind !== "names");
+      sharedNames = uniqSorted(docs.find(d => d.id === NAMES_DOC_ID)?.names || []);
       loaded.roster = true;
+      migrateLocalNames();
       renderAll();
     }, err => { connStatus.textContent = "連線錯誤：" + err.message; })
   );
@@ -152,6 +159,7 @@ function stopDataListeners(){
   unsubscribers = [];
   records = [];
   roster = [];
+  sharedNames = [];
   renderAll();
 }
 
@@ -507,6 +515,7 @@ const nameLabel = document.getElementById("nameLabel");
 const nameBox = document.getElementById("nameBox");
 const nameRow = document.getElementById("nameRow");
 const nameAddBtn = document.getElementById("nameAddBtn");
+const nameEditBtn = document.getElementById("nameEditBtn");
 const nameAdd = document.getElementById("nameAdd");
 const nameAddInput = document.getElementById("nameAddInput");
 const CUSTOM_NAMES_KEY = "makeup_custom_names";
@@ -545,10 +554,32 @@ function saveCustomName(name){
   list.push(name);
   try{ localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(list)); }catch(_){}
 }
+function removeCustomName(name){
+  try{ localStorage.setItem(CUSTOM_NAMES_KEY, JSON.stringify(loadCustomNames().filter(n=>n!==name))); }catch(_){}
+}
+// 名單存回 Firestore，這樣每台電腦、每位老師看到的是同一份
+async function saveSharedNames(list){
+  const names = uniqSorted(list);
+  if(db) return writeSafely(()=>setDoc(doc(db,"roster",NAMES_DOC_ID), { kind:"names", names }));
+  sharedNames = names;
+  renderAll();
+  return true;
+}
+// 舊版的名字只存在自己的瀏覽器裡，第一次連上時搬到共用名單
+async function migrateLocalNames(){
+  if(!db || namesMigrated) return;
+  namesMigrated = true;
+  const mine = loadCustomNames().filter(n => n && !sharedNames.includes(n));
+  if(mine.length) await saveSharedNames([...sharedNames, ...mine]);
+}
+function recordsUsingName(name){
+  return records.filter(r => r.homeroomTeacher === name || r.teachingTeacher === name || r.teacherName === name);
+}
+
 function taNameList(){ return uniqSorted(roster.filter(s=>s.ta).map(s=>s.ta)); }
 function teacherNameList(){
-  // 老師頁是給英語總導師看的，名單就取英語總導師
-  return uniqSorted([...records.map(r=>r.homeroomTeacher), ...loadCustomNames()]);
+  // 老師頁是給英語總導師看的：名單＝紀錄裡出現過的＋共用名單＋這台電腦自己加的
+  return uniqSorted([...records.map(r=>r.homeroomTeacher), ...sharedNames, ...loadCustomNames()]);
 }
 function namesForRole(role){
   if(role === "ta") return taNameList();
@@ -563,8 +594,9 @@ function refreshNameField(){
   if(nameBox.hidden) return;
   nameLabel.textContent = hint.label;
   nameSelect.setAttribute("aria-label", `選擇你的身分：${hint.label}`);
-  // 助教名單由管理職的時段設定決定，不能自己加
+  // 助教名單由管理職的時段設定決定，不能在這裡加；✎ 管的是英語總導師名單，只出現在老師頁
   nameAddBtn.hidden = state.role === "ta";
+  nameEditBtn.hidden = state.role !== "teacher";
   const names = namesForRole(state.role);
   const ready = loaded.records && loaded.roster;
 
@@ -599,6 +631,83 @@ function setName(name){
 nameSelect.addEventListener("change", ()=>setName(nameSelect.value));
 nameAddBtn.addEventListener("click", startAddName);
 
+// ---------------- 管理名單（改名、刪除）----------------
+const namesBackdrop = document.getElementById("namesBackdrop");
+const namesList = document.getElementById("namesList");
+document.getElementById("nameEditBtn").addEventListener("click", openNamesModal);
+document.getElementById("namesClose").addEventListener("click", ()=>namesBackdrop.classList.remove("open"));
+namesBackdrop.addEventListener("click", e=>{ if(e.target === namesBackdrop) namesBackdrop.classList.remove("open"); });
+
+function openNamesModal(){
+  namesBackdrop.classList.add("open");
+  renderNamesModal();
+}
+
+function renderNamesModal(){
+  const e = escapeHtml;
+  const names = teacherNameList();
+  namesList.innerHTML = names.length
+    ? names.map(n=>{
+        const used = recordsUsingName(n).length;
+        return `<div class="nm-row" data-name="${e(n)}">
+          <input class="nm-input" value="${e(n)}" aria-label="名字">
+          <span class="nm-count">${used ? `${used} 筆紀錄` : "未使用"}</span>
+          <button type="button" class="btn ghost small nm-save">改名</button>
+          <button type="button" class="btn ghost small nm-del">刪除</button>
+        </div>`;
+      }).join("")
+    : '<div class="empty">名單是空的，關掉這個視窗後按 ＋ 新增名字</div>';
+
+  namesList.querySelectorAll(".nm-row").forEach(row=>{
+    const oldName = row.dataset.name;
+    row.querySelector(".nm-save").addEventListener("click", ()=>applyRename(oldName, row.querySelector(".nm-input").value));
+    row.querySelector(".nm-del").addEventListener("click", ()=>deleteNameEntry(oldName));
+    row.querySelector(".nm-input").addEventListener("keydown", ev=>{
+      if(ev.key === "Enter"){ ev.preventDefault(); applyRename(oldName, ev.target.value); }
+    });
+  });
+}
+
+async function applyRename(oldName, rawNew){
+  const newName = String(rawNew || "").trim().replace(/\s+/g, " ");
+  if(!newName){ showToast("名字不能空白"); return; }
+  if(newName === oldName){ showToast("名字沒有改變"); return; }
+  const affected = recordsUsingName(oldName);
+  if(!confirm(
+    `把「${oldName}」改成「${newName}」？\n\n` +
+    `會一併更新 ${affected.length} 筆紀錄裡的老師欄位（英語總導師、教學老師、登記者）。\n` +
+    `已經留下的查核簽名、點名紀錄不會被改。`
+  )) return;
+
+  for(const r of affected){
+    const fields = {};
+    if(r.homeroomTeacher === oldName) fields.homeroomTeacher = newName;
+    if(r.teachingTeacher === oldName) fields.teachingTeacher = newName;
+    if(r.teacherName === oldName) fields.teacherName = newName;
+    if(!(await saveRecordFields(r.id, fields))) return;   // 沒存到，錯誤訊息已經跳出來了
+  }
+  if(!(await saveSharedNames([...sharedNames.filter(n=>n!==oldName), newName]))) return;
+  removeCustomName(oldName);
+  saveCustomName(newName);
+  if(state.name === oldName) setName(newName);
+  showToast(affected.length ? `已改成「${newName}」，同步更新 ${affected.length} 筆紀錄` : `已改成「${newName}」`);
+  renderNamesModal();
+}
+
+async function deleteNameEntry(name){
+  const used = recordsUsingName(name).length;
+  if(used){
+    alert(`「${name}」還有 ${used} 筆紀錄在使用，不能直接刪除。\n\n可以改成正確的名字（會一起更新那些紀錄），或先去修改那幾筆紀錄。`);
+    return;
+  }
+  if(!confirm(`從名單移除「${name}」？沒有任何紀錄在用，不會影響資料。`)) return;
+  if(!(await saveSharedNames(sharedNames.filter(n=>n!==name)))) return;
+  removeCustomName(name);
+  if(state.name === name) setName("");
+  showToast(`已移除「${name}」`);
+  renderNamesModal();
+}
+
 function startAddName(){
   nameRow.hidden = true;
   nameAdd.hidden = false;
@@ -618,7 +727,10 @@ function commitAddName(){
   const known = uniqSorted([...teacherNameList(), ...taNameList()]);
   const match = known.find(n=>n.toLowerCase() === raw.toLowerCase());
   const name = match || raw;
-  if(!match) saveCustomName(name);
+  if(!match){
+    saveCustomName(name);
+    saveSharedNames([...sharedNames, name]);   // 加進共用名單，其他人也看得到
+  }
   if(match && match !== raw) showToast(`名單上已經有「${match}」，已直接選取`);
   nameAdd.hidden = true;
   nameRow.hidden = false;
