@@ -1581,7 +1581,10 @@ function renderWeekOverview({ wrap, badge, weekStart, onWeekChange, match, roste
         html += `<td>${list.length ? list.map(r=>{
           const st = computeStatus(r);
           const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
-          return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${statusLabel(st)}${showTa ? `・${e(r.slotTA)}` : ""}</small></button>`;
+          // 教室＝時段設定的備註，老師和助教在總覽就看得到要去哪一間
+          const room = slotNote(r.slotDate, r.slotTime, r.slotTA);
+          const meta = [statusLabel(st), showTa && r.slotTA, room].filter(Boolean).map(e).join("・");
+          return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${meta}</small></button>`;
         }).join("") : '<div class="wk-empty">—</div>'}</td>`;
       });
       html += '</tr>';
