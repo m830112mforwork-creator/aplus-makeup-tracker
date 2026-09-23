@@ -1060,6 +1060,10 @@ document.getElementById("teacherForm").addEventListener("submit", e=>{
       return;
     }
     data.teacherName = state.name;
+    if(data.kind === "boost"){
+      data.leaveReason = "";                       // 加強輔導不是請假
+      if(!data.absenceDate) data.absenceDate = todayStr();   // 申請日期
+    }
     data.actualDate = "";
     data.result = ""; data.homeworkStatus = ""; data.taNote = "";
     data.parentNotified = false;
@@ -1076,10 +1080,11 @@ document.getElementById("teacherForm").addEventListener("submit", e=>{
     selectedSlot = null;
     document.getElementById("teacherFormHint").textContent = "";
     prefillHomeroom();
+    applyKindToForm(form, "makeup");   // reset 之後把類型切回預設
     renderSlotPicker();
     showToast(otherHomeroom
       ? `已送出；這筆的英語總導師是 ${otherHomeroom}，會出現在他的清單`
-      : "已送出補課紀錄");
+      : `已送出${data.kind === "boost" ? "加強輔導" : "補課"}紀錄`);
   }, "送出中…");
 });
 
@@ -1292,6 +1297,57 @@ async function deleteRosterSlot(id){
   return true;
 }
 
+// ---------------- 紀錄類型：請假補課／加強輔導 ----------------
+// 加強輔導不是因為缺課，所以不用填缺課日期與請假原因；其餘流程（指派、助教填寫、老師查核）完全一樣
+const KIND = {
+  makeup: {
+    label:"請假補課", noun:"補課", title:"新增請假補課紀錄", sec:"缺課資訊",
+    dateLabel:"缺課日期", coreLabel:"缺課核心課程",
+    corePlaceholder:"例如：VAA+SAA/OAA/GAA/PAA",
+    hint:"學生請假缺課，要補上進度",
+  },
+  boost: {
+    label:"加強輔導", noun:"加強輔導", title:"新增加強輔導紀錄", sec:"加強輔導資訊",
+    dateLabel:"申請日期", coreLabel:"加強項目",
+    corePlaceholder:"例如：單字、朗讀、GAA 文法",
+    hint:"不是缺課，是固定安排的個別加強",
+  },
+};
+function kindOf(r){ return KIND[r?.kind] || KIND.makeup; }
+// 加強輔導不是補課，狀態文字跟著換（其餘狀態共用）
+function statusLabelFor(r, st){
+  return isBoost(r) && st === "pending" ? "待輔導" : statusLabel(st);
+}
+function isBoost(r){ return r?.kind === "boost"; }
+
+// 老師表單和「修改」視窗都用同一套（修改視窗的欄位是從老師表單複製過去的）
+function applyKindToForm(form, kind){
+  if(!form) return;
+  const k = KIND[kind] || KIND.makeup;
+  form.querySelectorAll("[data-kind-sec]").forEach(el=>{ el.textContent = k.sec; });
+  form.querySelectorAll('[data-kind-label="date"]').forEach(el=>{ el.textContent = k.dateLabel; });
+  form.querySelectorAll('[data-kind-label="core"]').forEach(el=>{ el.textContent = k.coreLabel; });
+  form.querySelectorAll('[data-kind-hint]').forEach(el=>{ el.textContent = k.hint; });
+  form.querySelectorAll('[name="coreCourse"]').forEach(el=>{ el.placeholder = k.corePlaceholder; });
+  form.querySelectorAll('[data-kind-field="reason"]').forEach(el=>{ el.hidden = kind === "boost"; });
+  form.querySelectorAll(".kind-btn").forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.kind === kind);
+  });
+  const hidden = form.querySelector('[name="kind"]');
+  if(hidden) hidden.value = kind;
+  // 加強輔導沒有缺課日期，申請日期先帶今天，老師不用再挑
+  const date = form.querySelector('[name="absenceDate"]');
+  if(date && kind === "boost" && !date.value) date.value = todayStr();
+  const title = document.getElementById("teacherFormTitle");
+  if(title && form.id === "teacherForm") title.textContent = k.title;
+}
+
+document.addEventListener("click", e=>{
+  const btn = e.target.closest(".kind-btn");
+  if(!btn) return;
+  applyKindToForm(btn.closest("form"), btn.dataset.kind);
+});
+
 // ---------------- 訊息範本 ----------------
 // 助教補完課傳給家長。只放家長需要知道的：補了什麼、學得怎樣、作業狀況。
 // 「助教備註與交接」是內部交接用的，不放進來。
@@ -1301,7 +1357,16 @@ function buildParentMessage(r){
     return m ? `${+m[1]}/${+m[2]}` : (d || "");
   };
   const callName = r.studentNameEn || r.studentNameCh;   // 內文用英文名字，沒填才用中文名字
-  const lines = [
+  const lines = isBoost(r) ? [
+    `【加強輔導完成通知】`,
+    ``,
+    `${callName} 的英語加強輔導，已於 ${md(r.actualDate)} 完成囉!`,
+    ``,
+    `【輔導內容】`,
+  ].concat([
+    r.assignedContent || "（無）",
+    ``,
+  ]) : [
     `【補課完成通知】`,
     ``,
     `${callName} ${md(r.absenceDate)} 請假的英語課程，已於 ${md(r.actualDate)} 完成補課囉!`,
@@ -1322,11 +1387,12 @@ function buildDeptRequestMessage(r){
   const classLine = [r.className, r.homeroomTeacher && `${r.homeroomTeacher}英語導師`].filter(Boolean).join("／");
   // 中文名字後面帶英文名字（沒填就只放中文），教學部叫學生時常用英文名
   const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
+  const noun = kindOf(r).noun;
   return [
-    `${who} 英語補課申請時段：`,
+    `${who} 英語${noun}申請時段：`,
     ``,
-    `補課學生：${who}${classLine ? `（${classLine}）` : ""}`,
-    `缺課日期：${r.absenceDate}，原因：${r.leaveReason}`,
+    `${noun}學生：${who}${classLine ? `（${classLine}）` : ""}`,
+    isBoost(r) ? `類型：加強輔導（非缺課）` : `缺課日期：${r.absenceDate}，原因：${r.leaveReason}`,
     `申請時段：${slotLabel(dayOf(r), r.slotTime)}`,
     `負責助教：${r.slotTA}${note ? `（${note}）` : ""}`,
     `需攜帶：${bookLine || "（請見指派內容）"}`,
@@ -1338,7 +1404,7 @@ function buildDeptUpdateMessage(r, statusChoice, newSlot, origSlot = slotLabel(d
   const box = (label) => statusChoice===label ? "☑" : "☐";
   return [
     `老師您好，`,
-    `${r.studentNameCh}同學（${r.teacherName}英語導師）補課狀況更新：`,
+    `${r.studentNameCh}同學（${r.teacherName}英語導師）${kindOf(r).noun}狀況更新：`,
     ``,
     `原訂時段：${origSlot}`,
     `狀態：${box("改期")}改期 ${box("取消")}取消`,
@@ -1583,7 +1649,7 @@ function renderWeekOverview({ wrap, badge, weekStart, onWeekChange, match, roste
           const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
           // 教室＝時段設定的備註，老師和助教在總覽就看得到要去哪一間
           const room = slotNote(r.slotDate, r.slotTime, r.slotTA);
-          const meta = [statusLabel(st), showTa && r.slotTA, room].filter(Boolean).map(e).join("・");
+          const meta = [statusLabelFor(r, st), showTa && r.slotTA, room].filter(Boolean).map(e).join("・");
           return `<button type="button" class="wk-item ${st}" data-rec="${e(r.id)}"><b>${e(who)}</b><small>${meta}</small></button>`;
         }).join("") : '<div class="wk-empty">—</div>'}</td>`;
       });
@@ -1740,15 +1806,24 @@ function recordCardHtml(r, mode){
     <div class="rc-head">
       <div>
         <div class="rc-title">${e(r.studentNameCh)} ${r.studentNameEn?("("+e(r.studentNameEn)+")"):""}</div>
-        <div class="rc-meta">${[r.absenceDate, r.leaveReason, r.className, r.homeroomTeacher && `英語總導師：${r.homeroomTeacher}`, r.teachingTeacher && `教學老師：${r.teachingTeacher}`].filter(Boolean).map(e).join("｜")}</div>
+        <div class="rc-meta">${[
+          isBoost(r) ? (r.absenceDate && `申請日期：${r.absenceDate}`) : r.absenceDate,
+          isBoost(r) ? "" : r.leaveReason,
+          r.className,
+          r.homeroomTeacher && `英語總導師：${r.homeroomTeacher}`,
+          r.teachingTeacher && `教學老師：${r.teachingTeacher}`,
+        ].filter(Boolean).map(e).join("｜")}</div>
       </div>
-      <span class="tag ${status}">${statusLabel(status)}</span>
+      <div class="rc-tags">
+        ${isBoost(r) ? `<span class="tag boost">加強輔導</span>` : ``}
+        <span class="tag ${status}">${statusLabelFor(r, status)}</span>
+      </div>
     </div>
     <!-- 上半＝老師填的（淡紫）、下半＝助教填的（淡金），兩塊顏色分開，一眼看得出誰負責填 -->
     <div class="rc-sec teacher">
-      <div class="rc-sec-title">老師指派 <small>由英語老師填寫</small></div>
+      <div class="rc-sec-title">${isBoost(r) ? "加強輔導指派" : "老師指派"} <small>由英語老師填寫</small></div>
       <div class="rc-body">
-        ${kv("缺課核心課程", r.coreCourse)}
+        ${kv(kindOf(r).coreLabel, r.coreCourse)}
         ${kv("課本", r.book)}
         ${kv("單元", r.unit)}
         ${kv("指派補課內容", r.assignedContent, true)}
@@ -1927,6 +2002,8 @@ function openEditModal(id){
     }
     el.value = v;
   });
+
+  applyKindToForm(editForm, r.kind === "boost" ? "boost" : "makeup");
 
   const slotBox = document.createElement("div");
   slotBox.className = "form-section";
@@ -2184,11 +2261,11 @@ function renderAdmin(){
       const status = computeStatus(r);
       const td = (label, html) => `<td data-label="${label}">${html}</td>`;
       return `<tr class="${status}">
-        ${td("狀態", `<span class="tag ${status}">${statusLabel(status)}</span>`)}
+        ${td("狀態", `<span class="tag ${status}">${statusLabelFor(r, status)}</span>`)}
         ${td("缺課日期", e(r.absenceDate))}
         ${td("學生", e(r.studentNameCh) + (r.studentNameEn ? " / "+e(r.studentNameEn) : ""))}
         ${td("班級/導師", e(r.className) + (r.homeroomTeacher ? "／"+e(r.homeroomTeacher) : ""))}
-        ${td("原因", e(r.leaveReason))}
+        ${td("原因", e(isBoost(r) ? "加強輔導" : r.leaveReason))}
         ${td("指派內容", e(r.assignedContent))}
         ${td("時段", e(slotLabel(dayOf(r), r.slotTime)))}
         ${td("助教", e(r.slotTA))}
