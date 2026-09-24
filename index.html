@@ -443,7 +443,23 @@
 
   /* 表格 */
   .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r-md);}
-  table.admin-table{width:100%; border-collapse:collapse; font-size:13px; min-width:980px;}
+  table.admin-table{width:100%; border-collapse:collapse; font-size:13px; min-width:1380px;}
+  /* 欄位不要被擠到一個字一行：短欄位一律不斷行，長欄位給足寬度；
+     視窗不夠寬就讓整張表橫向捲動（.table-wrap 已經是 overflow-x:auto） */
+  table.admin-table td[data-label="狀態"],
+  table.admin-table td[data-label="缺課日期"],
+  table.admin-table td[data-label="原因"],
+  table.admin-table td[data-label="時段"],
+  table.admin-table td[data-label="助教"],
+  table.admin-table td[data-label="實際補課"],
+  table.admin-table td[data-label="點名"],
+  table.admin-table td[data-label="家長已通知"],
+  table.admin-table td[data-label="操作"]{white-space:nowrap;}
+  table.admin-table td[data-label="學生"],
+  table.admin-table td[data-label="班級/導師"],
+  table.admin-table td[data-label="老師查核"]{min-width:110px;}
+  table.admin-table td[data-label="指派內容"]{min-width:320px; white-space:pre-wrap;}
+  table.admin-table td[data-label="驗收"]{min-width:200px; white-space:pre-wrap;}
   table.admin-table th, table.admin-table td{
     padding:9px 11px; text-align:left; border-bottom:1px solid var(--line-soft);
     vertical-align:top;
@@ -459,7 +475,7 @@
   table.admin-table tr.done td{background:#FBFDFC;}
   table.admin-table tr.cancelled td{color:var(--ink-faint);}
   table.admin-table tr.noShow td{background:#FDF1ED;}
-  .roster-table{min-width:0;}
+  table.admin-table.roster-table, table.admin-table.people-table{min-width:0;}   /* 這兩張欄位少，不需要橫向捲 */
   .q-input{width:64px; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .note-input{width:100%; min-width:120px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
   .time-input{width:100%; min-width:96px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink);}
@@ -688,6 +704,7 @@
       font-weight:500; flex-shrink:0;
     }
     table.admin-table td:empty{display:none;}
+    table.admin-table td[data-label]{white-space:normal; min-width:0;}
     table.admin-table tr.overdue td, table.admin-table tr.toVerify td, table.admin-table tr.noShow td,
     table.admin-table tr.done td{background:transparent;}
     table.admin-table tbody tr:hover td{background:transparent;}
@@ -1166,6 +1183,6 @@
 
 <div class="toast" id="toast"></div>
 
-<script type="module" src="./app.js?v=20260924b"></script>
+<script type="module" src="./app.js?v=20260924c"></script>
 </body>
 </html>
