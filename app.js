@@ -1914,7 +1914,7 @@ function recordCardHtml(r, mode){
         ${kv("指派補課內容", r.assignedContent, true)}
         ${kv("預計時長", r.plannedDuration)}
         <!-- 時段／助教／教室：整張卡片最常被問的一行，獨立做成醒目條 -->
-        <div class="kv slot"><b>時段/負責人</b><span>${e(slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}</span></div>
+        <div class="kv slot"><b>補課時段/補課負責人(助教)</b><span>${e(slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}</span></div>
         ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`, true) : ``}
         ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
       </div>
