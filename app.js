@@ -1542,7 +1542,11 @@ function renderTeacherRecords(){
     return;
   }
   const page = shown.slice(0, teacherShown);
-  wrap.innerHTML = page.map(r=>recordCardHtml(r, "teacher")).join("");
+  // 要處理的（待補課／逾期／未到／待查核）維持卡片，已完成和已取消收合成日期分組
+  const todo = page.filter(r=>!isFinished(r));
+  const finished = page.filter(isFinished);
+  wrap.innerHTML = todo.map(r=>recordCardHtml(r, "teacher")).join("")
+    + (finished.length ? `<div class="grp-title">已完成／已取消 <span>${finished.length} 筆</span><small>點日期展開</small></div>${doneGroupsHtml(finished, "teacher")}` : "");
   bindRecordActions(wrap, page);
   renderMoreBar(document.getElementById("teacherMore"), page.length, shown.length, CARD_PAGE_SIZE,
     ()=>{ teacherShown += CARD_PAGE_SIZE; renderTeacherRecords(); },
@@ -1703,11 +1707,12 @@ function focusTeacherRecordCard(id){
   if(!r) return;
   const find = () => document.querySelector(`#teacherRecordList .record-card[data-id="${CSS.escape(id)}"]`);
   if(!find()){
-    // 可能被狀態篩選或分頁擋住，先全部顯示
+    // 可能被狀態篩選、分頁擋住，或已完成的被收合了
     teacherFilter.status = "all";
     teacherShown = Infinity;
     document.querySelectorAll("#teacherStatusFilter button")
       .forEach(b=>b.classList.toggle("active", b.dataset.status === "all"));
+    if(isFinished(r)) revealRecord(r, "teacher");
     renderTeacherRecords();
   }
   const card = find();
@@ -1729,8 +1734,9 @@ function focusTaRecordCard(id){
   }
   const find = () => document.querySelector(`#view-ta .record-card[data-id="${CSS.escape(id)}"]`);
   if(!find()){
-    // 清單有分頁，卡片可能還沒畫出來，先全部展開
-    if(r.actualDate) taDoneShown = Infinity; else taPendingShown = Infinity;
+    // 清單有分頁、已完成的又是收合的，先全部展開
+    if(r.actualDate){ taDoneShown = Infinity; revealRecord(r, "ta"); }
+    else taPendingShown = Infinity;
     renderTaLists();
   }
   const card = find();
@@ -1779,7 +1785,7 @@ function renderTaLists(){
     ? pendingPage.map(r=>recordCardHtml(r,"ta")).join("")
     : '<div class="empty">目前沒有待處理的補課</div>';
   doneWrap.innerHTML = donePage.length
-    ? donePage.map(r=>recordCardHtml(r,"ta")).join("")
+    ? doneGroupsHtml(donePage, "ta")
     : '<div class="empty">還沒有已完成的紀錄</div>';
 
   bindRecordActions(pendingWrap, pendingPage);
@@ -1793,6 +1799,85 @@ function renderTaLists(){
     ()=>{ taDoneShown = Infinity; renderTaLists(); });
 
   restoreTaFormState(formState);
+}
+
+// ---------------- 已完成的紀錄：一天一組、預設收合 ----------------
+// 補完的紀錄只會越疊越多、又幾乎不用再動，全部攤成卡片就變成一大疊。
+// 改成按日期分組收合，組內先給一行摘要，需要細節再點開。
+const openGroups = new Set();   // 展開中的日期分組
+const openRows = new Set();     // 展開中的單筆紀錄
+
+function isFinished(r){ return r.cancelled || computeStatus(r) === "done"; }
+// 從週總覽點過來時，收合中的那一組和那一筆要先打開，不然卡片根本不在畫面上
+function revealRecord(r, mode){
+  openGroups.add(`${mode}|${r.actualDate || r.slotDate || ""}`);
+  openRows.add(r.id);
+}
+// 時段表只有週一到週五，但實際補課日期可能是週六日，星期幾要另外補
+function weekdayName(dateStr){
+  const key = weekdayOf(dateStr);
+  return WEEKDAY_LABEL[key] || (WEEKDAY_SHORT[key] ? `週${WEEKDAY_SHORT[key]}` : "");
+}
+
+function doneGroupsHtml(list, mode){
+  const e = escapeHtml;
+  const groups = new Map();
+  list.forEach(r=>{
+    const d = r.actualDate || r.slotDate || "";
+    if(!groups.has(d)) groups.set(d, []);
+    groups.get(d).push(r);
+  });
+  const keys = [...groups.keys()].sort((a, b)=>b.localeCompare(a));   // 新的在上面
+  return keys.map(d=>{
+    const items = groups.get(d);
+    const key = `${mode}|${d}`;
+    const open = openGroups.has(key);
+    const names = items.map(r=>r.studentNameCh).join("、");
+    return `<div class="grp">
+      <button type="button" class="grp-head${open ? " open" : ""}" data-grp="${e(key)}" aria-expanded="${open}">
+        <span class="grp-caret" aria-hidden="true">▸</span>
+        <span class="grp-date">${e(d ? `${shortDate(d)}（${weekdayName(d)}）` : "未排日期")}</span>
+        <span class="grp-count">${items.length} 筆</span>
+        <span class="grp-names">${e(names)}</span>
+      </button>
+      ${open ? `<div class="grp-body">${items.map(r=>doneRowHtml(r, mode)).join("")}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+function doneRowHtml(r, mode){
+  const e = escapeHtml;
+  const st = computeStatus(r);
+  const open = openRows.has(r.id);
+  const who = [r.studentNameCh, r.studentNameEn].filter(Boolean).join(" ");
+  const bits = [
+    r.slotTime,
+    slotNote(dayOf(r), r.slotTime, r.slotTA),
+    mode === "teacher" ? r.slotTA : r.className,
+    r.cancelled ? "" : (r.parentNotified ? "家長已通知" : "家長未通知"),
+    r.cancelled ? "" : (r.teacherVerified ? "老師已簽名" : "待老師簽名"),
+  ].filter(Boolean).join("・");
+  return `<div class="row-item">
+    <button type="button" class="row-head${open ? " open" : ""}" data-row="${e(r.id)}" aria-expanded="${open}">
+      <span class="grp-caret" aria-hidden="true">▸</span>
+      <b>${e(who)}</b>
+      <small>${e(bits)}</small>
+      <span class="tag ${st}">${statusLabelFor(r, st)}</span>
+    </button>
+    ${open ? recordCardHtml(r, mode) : ""}
+  </div>`;
+}
+
+document.addEventListener("click", e=>{
+  const grp = e.target.closest(".grp-head");
+  if(grp){ toggleOpen(openGroups, grp.dataset.grp); return; }
+  const row = e.target.closest(".row-head");
+  if(row) toggleOpen(openRows, row.dataset.row);
+});
+function toggleOpen(set, key){
+  if(set.has(key)) set.delete(key); else set.add(key);
+  if(state.role === "ta") renderTaLists();
+  else if(state.role === "teacher") renderTeacherRecords();
 }
 
 // ---------------- 卡片 HTML ----------------
@@ -1828,7 +1913,8 @@ function recordCardHtml(r, mode){
         ${kv("單元", r.unit)}
         ${kv("指派補課內容", r.assignedContent, true)}
         ${kv("預計時長", r.plannedDuration)}
-        ${kv("時段/負責人", slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}
+        <!-- 時段／助教／教室：整張卡片最常被問的一行，獨立做成醒目條 -->
+        <div class="kv slot"><b>時段/負責人</b><span>${e(slotTextWithNote(dayOf(r), r.slotTime, r.slotTA))}</span></div>
         ${r.lastRescheduled ? kv("改期紀錄", `${r.lastRescheduled.from} → ${r.lastRescheduled.to}（${formatStamp(r.lastRescheduled.at)}）`, true) : ``}
         ${r.cancelled ? kv("取消", `${r.cancelledBy ? r.cancelledBy + " " : ""}${formatStamp(r.cancelledAt)} 取消`) : ``}
       </div>
